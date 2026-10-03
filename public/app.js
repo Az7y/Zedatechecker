@@ -29,7 +29,7 @@ const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[],
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
   editStaff:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
-  lines:[{expiry:'',qty:''}], offCache:{}, feedback:[], nameImg:{}, sugTimer:null };
+  lines:[{expiry:'',qty:''}], offCache:{}, feedback:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null };
 
 /* GS1 barcode parsing. Handles plain EAN/UPC, and GS1-128 / DataMatrix / QR element strings
    (with or without brackets, with or without the group separator a scanner sends). */
@@ -241,11 +241,48 @@ function setupView(){
   </form>
   <div><button class="btn small" data-signout="1">Sign out</button></div></section>`;
 }
+function photoKeyFor(it){return it.gtin?String(it.gtin):('n_'+slug(it.product));}
+function ensurePhoto(key){
+  if(key in S.photos||S.photoReq[key])return;S.photoReq[key]=1;
+  getDoc(doc(fs,'photos',key)).then(snap=>{S.photos[key]=snap.exists()?(snap.data().data||null):null;scheduleRender();}).catch(()=>{S.photos[key]=null;});
+}
+let _srt=null;function scheduleRender(){clearTimeout(_srt);_srt=setTimeout(()=>{if(!(cam&&S.camOn))render();},150);}
 function itemPhoto(it){
-  const prod=it.gtin?S.products[it.gtin]:S.products['n_'+slug(it.product)];const photo=prod&&prod.image;if(!photo)return '';
-  return photosOn()
-    ?`<a class="thumb" href="${esc(photo)}" target="_blank" rel="noopener"><img src="${esc(photo)}" alt="photo" loading="lazy"></a>`
-    :`<a class="plink" href="${esc(photo)}" target="_blank" rel="noopener">Photo</a>`;
+  const prod=it.gtin?S.products[it.gtin]:S.products['n_'+slug(it.product)];
+  const key=photoKeyFor(it);
+  let src=prod&&prod.image;
+  if(!src){ if(S.photos[key]===undefined){ensurePhoto(key);} else if(S.photos[key]){src=S.photos[key];} }
+  if(src){
+    return photosOn()
+      ?`<a class="thumb" href="${esc(src)}" target="_blank" rel="noopener"><img src="${esc(src)}" alt="photo" loading="lazy"></a>`
+      :`<a class="plink" href="${esc(src)}" target="_blank" rel="noopener">Photo</a>`;
+  }
+  if(S.me&&!S.me.owner) return `<button type="button" class="btn small ghost photo-add" data-addphoto="${esc(key)}">+ Photo</button>`;
+  return '';
+}
+// Camera / file photo, shrunk on the device and stored in Firestore (no Firebase Storage needed).
+let _fileInput=null;
+function pickPhoto(key){
+  S.photoTarget=key;
+  if(!_fileInput){_fileInput=document.createElement('input');_fileInput.type='file';_fileInput.accept='image/*';_fileInput.setAttribute('capture','environment');_fileInput.style.display='none';_fileInput.addEventListener('change',onPhotoPicked);document.body.appendChild(_fileInput);}
+  _fileInput.click();
+}
+function onPhotoPicked(e){
+  const f=e.target.files&&e.target.files[0];e.target.value='';const key=S.photoTarget;
+  if(!f||!key||S.me.owner)return;flash('Processing photo…');
+  const img=new Image();const url=URL.createObjectURL(f);
+  img.onerror=()=>{URL.revokeObjectURL(url);flash('Could not read that photo');};
+  img.onload=()=>{URL.revokeObjectURL(url);
+    const max=480;let w=img.width,h=img.height;const sc=Math.min(1,max/Math.max(w,h));w=Math.max(1,Math.round(w*sc));h=Math.max(1,Math.round(h*sc));
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);
+    let data;try{data=cv.toDataURL('image/jpeg',0.6);}catch(err){flash('Could not process that photo');return;}
+    if(data.length>380000){try{data=cv.toDataURL('image/jpeg',0.4);}catch(e){}}
+    if(data.length>380000){flash('Photo too large, try a plainer shot');return;}
+    S.photos[key]=data;const b=by();
+    quickWrite(setDoc(doc(fs,'photos',key),{data,byName:b.byName||'Owner',at:b.at}),'Photo added');
+    render();
+  };
+  img.src=url;
 }
 function qtyControl(it,live){
   if(!live||S.me.owner)return it.qty?`<span class="note">× ${esc(it.qty)}</span>`:'';
@@ -705,6 +742,7 @@ document.addEventListener('click',e=>{
   const d=t.dataset;
   if(d.camera){cam?stopCamera():startCamera();return}
   if(d.usesug){const pe=$('#lf_product');if(pe)pe.value=d.usesug;if(d.img)S.nameImg[normName(d.usesug)]=d.img;const el=$('#nameSug');if(el)el.innerHTML='';checkDup();pe?.focus();return}
+  if(d.addphoto){if(!S.me.owner)pickPhoto(d.addphoto);return}
   if(d.signout||t.id==='signOutBtn'){if(cam)stopCamera();signOut(auth);return}
   if(t.id==='themeBtn'){cycleTheme();return}
   if(t.id==='photoBtn'){store.set('sdc_photos',photosOn()?null:'1');render();return}

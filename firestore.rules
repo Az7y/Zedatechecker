@@ -108,6 +108,15 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // ---------- product photos taken on a phone (small JPEGs, not Firebase Storage) ----------
+    match /photos/{key} {
+      allow read: if canUse();
+      allow create, update: if canUse()
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 400000;
+      allow delete: if isManager();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
