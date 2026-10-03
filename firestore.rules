@@ -4,8 +4,9 @@ service cloud.firestore {
 
     // ---------- who is asking ----------
     function signedIn() { return request.auth != null; }
+    // Set this to your owner account's email (the one you create in Firebase Auth). See SETUP.md.
     function isOwner() {
-      return signedIn() && request.auth.token.email == 'privaterelayoz7y@proton.me';
+      return signedIn() && request.auth.token.email == 'owner@example.com';
     }
     function memberPath() { return /databases/$(database)/documents/members/$(request.auth.uid); }
     function isMember() { return signedIn() && exists(memberPath()); }

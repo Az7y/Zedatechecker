@@ -12,7 +12,13 @@ What's in this folder:
 - `firestore.rules` decides who can read and change the data (already set to your owner email)
 - `firebase.json` and `.firebaserc` tell Firebase how to deploy it
 
-Already done for you: the Firebase project (`shelf-date-check`), the web app config, the owner email (`privaterelayoz7y@proton.me`), and the hosting site name (`zedatechecker`). You do NOT need to touch any of the files. Just do the console steps below and deploy. About 15 minutes.
+Before deploying, point the app at your own Firebase project:
+
+1. Copy `public/firebase-config.example.js` to `public/firebase-config.js` and fill in your web app config and your `OWNER_EMAIL`.
+2. In `firestore.rules`, set the email in `isOwner()` to that same owner email.
+3. In `firebase.json`, set `hosting.site` to your Hosting site name (and `.firebaserc` to your project id).
+
+Then follow the console steps below. About 15 minutes.
 
 ## 1. Create the owner login (if you haven't already)
 
@@ -52,7 +58,7 @@ If deploy says Hosting isn't set up, run `firebase init hosting`, pick your exis
 ## 5. First-time setup
 
 1. Open the web address. Tap the yellow **BB** badge five times to reach the admin sign-in.
-2. Sign in with the owner email (`privaterelayoz7y@proton.me`) and the password you set in step 1.
+2. Sign in with the owner email (`your owner email`) and the password you set in step 1.
 3. Enter the store name and create the first manager (name, username, PIN). The app signs the owner out.
 4. Sign in as that manager with the username and PIN.
 5. In the **Staff** tab, add the team. Each person gets a username and a 4 to 6 digit PIN.
