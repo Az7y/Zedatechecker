@@ -81,6 +81,11 @@ function parseScan(raw){
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
+// Per-device preferences
+const photosOn=()=>store.get('sdc_photos')==='1';
+function applyTheme(){const t=store.get('sdc_theme');const r=document.documentElement;if(t==='light'||t==='dark')r.dataset.theme=t;else r.removeAttribute('data-theme');}
+function cycleTheme(){const order=['system','light','dark'];const cur=store.get('sdc_theme')||'system';const next=order[(order.indexOf(cur)+1)%3];store.set('sdc_theme',next==='system'?null:next);applyTheme();updateThemeBtn();}
+function updateThemeBtn(){const b=$('#themeBtn');if(!b)return;const cur=store.get('sdc_theme')||'system';b.textContent=cur==='light'?'☀ Light':cur==='dark'?'☾ Dark':'◐ Auto';}
 function flash(msg){const f=$('#flash');clearTimeout(flash.t);clearTimeout(undo.t);clearInterval(undo.i);f.textContent=msg;f.hidden=false;flash.t=setTimeout(()=>f.hidden=true,3000)}
 const undo={t:null,i:null};
 // A 10-second window to undo the action just taken.
@@ -147,6 +152,7 @@ function resolveMe(){
   S.me=st&&st.active!==false?{...st,role:S.member.role}:null;
 }
 function boot(){
+  applyTheme();
   if(location.hash==='#owner')S.showOwner=true;
   onAuthStateChanged(auth,u=>{
     stopListeners();Object.assign(S,{authUser:u,authChecked:true,owner:false,member:null,me:null,error:null,loaded:{},briefed:false,settings:null});
@@ -185,7 +191,7 @@ function render(){
   const tabs=Object.keys(TABS).filter(t=>!(S.me.owner&&t==='log'));
   if(!tabs.includes(S.tab))S.tab='today';
   $('#tabs').innerHTML=tabs.map(t=>`<button role="tab" data-tab="${t}" aria-selected="${t===S.tab}">${TABS[t]}</button>`).join('');
-  $('#whoName').textContent=S.me.name+' · '+ROLES[S.me.role||'staff'];
+  $('#whoName').textContent=S.me.name+' · '+ROLES[S.me.role||'staff'];updateThemeBtn();
   $('#storeName').textContent=S.settings.store||'';
   app.innerHTML={today:todayView,log:logView,all:allView,activity:activityView,staff:staffView}[S.tab]();
   restore(keep,focused);
@@ -232,6 +238,12 @@ function setupView(){
   </form>
   <div><button class="btn small" data-signout="1">Sign out</button></div></section>`;
 }
+function itemPhoto(it){
+  const prod=it.gtin?S.products[it.gtin]:null;const photo=prod&&prod.image;if(!photo)return '';
+  return photosOn()
+    ?`<a class="thumb" href="${esc(photo)}" target="_blank" rel="noopener"><img src="${esc(photo)}" alt="photo" loading="lazy"></a>`
+    :`<a class="plink" href="${esc(photo)}" target="_blank" rel="noopener">Photo</a>`;
+}
 function qtyControl(it,live){
   if(!live||S.me.owner)return it.qty?`<span class="note">× ${esc(it.qty)}</span>`:'';
   return `<span class="qtywrap"><button type="button" class="qbtn" data-qtyminus="${it.id}" aria-label="Decrease count">&minus;</button><span class="qnum" data-qty="${it.id}">× ${esc(it.qty||0)}</span><button type="button" class="qbtn" data-qtyplus="${it.id}" aria-label="Increase count">+</button></span>`;
@@ -243,6 +255,7 @@ function itemCard(it){
     <div class="datebox ${b==='ok'?'':b}"><div class="d">${+d}</div><div class="m">${MON[+m-1]} ${y.slice(2)}</div></div>
     <div class="name">${esc(it.product)} ${qtyControl(it,live)}</div>
     <div class="meta"><span class="batch">${esc(it.batch||'no batch')}</span>${it.location?`<span>${esc(it.location)}</span>`:''}
+      ${itemPhoto(it)}
       ${live?`<span class="pill ${band(n)}">${dueLabel(n)}</span>`:`<span class="pill done">${STATUS[it.status]}</span>`}</div>
     <div class="meta"><span>Logged by ${esc(it.loggedByName)} · ${fmtTime(it.loggedAt)}</span>
       ${it.lastAction&&it.lastAction!=='logged'&&it.lastByName?`<span>Last: ${esc(it.lastByName)} ${ACTION[it.lastAction]||''} · ${fmtTime(it.lastAt)}</span>`:''}</div>
@@ -388,13 +401,16 @@ function allView(){
 }
 function activityView(){
   const ev=[];
-  for(const it of S.items)for(const h of (it.history||[]))if(h.byName)ev.push({at:h.at,byName:h.byName,html:`${esc(ACTION[h.action]||h.action)} <b>${esc(it.product)}</b> <span class="batch">${esc(it.batch||'no batch')}</span>`});
+  for(const it of S.items)for(const h of (it.history||[]))if(h.byName){
+    const canRestore=['removed','sold','void'].includes(h.action)&&it.status===h.action&&it.lastAt===h.at&&atLeast('supervisor')&&!S.me.owner;
+    ev.push({at:h.at,byName:h.byName,restoreId:canRestore?it.id:null,html:`${esc(ACTION[h.action]||h.action)} <b>${esc(it.product)}</b> <span class="batch">${esc(it.batch||'no batch')}</span>`});
+  }
   for(const s of S.sections)for(const h of (s.history||[]))if(h.byName)ev.push({at:h.at,byName:h.byName,html:`checked <b>${esc(s.name)}</b> <span class="note">${new Date(h.at).getHours()<SPLIT_HOUR?'morning':'evening'}${h.note?`, ${esc(h.note)}`:''}</span>`});
   ev.sort((a,b)=>b.at-a.at);
   const by={};for(const e of ev){if(e.at>Date.now()-7*86400000)by[e.byName]=(by[e.byName]||0)+1}
   return `<section class="view"><h2>Activity</h2>
     ${Object.keys(by).length?`<div class="panel"><h3>Last 7 days by person</h3><div class="tablewrap"><table><tbody>${Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([n,c])=>`<tr><td>${esc(n)}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${c} action${c===1?'':'s'}</td></tr>`).join('')}</tbody></table></div></div>`:''}
-    <div class="log">${ev.length?ev.slice(0,120).map(e=>`<div class="row"><span class="t">${fmtTime(e.at)}</span><span><b>${esc(e.byName)}</b> ${e.html}</span></div>`).join(''):'<div class="empty">No activity yet. Every log, removal and section check shows here with who did it and when.</div>'}</div></section>`;
+    <div class="log">${ev.length?ev.slice(0,120).map(e=>`<div class="row"><span class="t">${fmtTime(e.at)}</span><span><b>${esc(e.byName)}</b> ${e.html}${e.restoreId?` <button class="btn small" data-restore="${e.restoreId}">Put back</button>`:''}</span></div>`).join(''):'<div class="empty">No activity yet. Every log, removal and section check shows here with who did it and when.</div>'}</div></section>`;
 }
 function myPinForm(){
   return `<form class="panel" id="myPinForm" autocomplete="off"><h3>Change my PIN</h3>
@@ -402,10 +418,16 @@ function myPinForm(){
     <label>New PIN (4 to 6 digits)<input id="mp_new" type="password" class="pin" inputmode="numeric" maxlength="6" required autocomplete="new-password"></label></div>
     <div id="mpErr"></div><button class="btn">Change PIN</button></form>`;
 }
+function displayPanel(){
+  return `<div class="panel" style="gap:8px"><h3>Display</h3>
+    <label class="switch"><input type="checkbox" id="photoToggle" ${photosOn()?'checked':''}> Show product photos as thumbnails</label>
+    <div class="note">Off shows a "Photo" link instead, lighter on data. Switch light/dark with the button in the top bar. Both are saved on this device only.</div></div>`;
+}
 function staffView(){
   // Floor staff and supervisors only manage their own PIN.
   if(!isAdmin())return `<section class="view"><h2>My account</h2>
     <div class="panel" style="gap:4px"><b>${esc(S.me.name)}</b><div class="note">@${esc(S.me.username)} · ${ROLES[S.me.role]}</div></div>
+    ${displayPanel()}
     ${myPinForm()}</section>`;
   const list=[...S.staff].sort((a,b)=>(a.active===false)-(b.active===false)||RANK[b.role||'staff']-RANK[a.role||'staff']||a.name.localeCompare(b.name));
   const card=s=>{
@@ -457,6 +479,7 @@ function staffView(){
       <button class="btn small" data-sec-save="${s.id}">Rename</button><button class="btn small danger" data-sec-archive="${s.id}">Remove</button></div>`).join('')}</div>`:'<div class="note">No sections yet.</div>'}
     <form id="sectionForm" class="secrow"><input id="sec_name" required maxlength="40" placeholder="New section, e.g. Dairy chiller" aria-label="New section name"><button class="btn small primary">Add section</button></form>
   </div>
+  ${displayPanel()}
   ${S.me.owner?'':myPinForm()}
   </section>`;
 }
@@ -477,17 +500,19 @@ async function stopCamera(){const c=cam;cam=null;S.camOn=false;if(c){try{await c
 /* ---------- product name lookup (Open Food Facts, free and open) ---------- */
 async function offFetch(gtin){
   const c=new AbortController();const t=setTimeout(()=>c.abort(),6000);
-  try{const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(gtin)}.json?fields=product_name,brands,quantity`,{signal:c.signal,headers:{Accept:'application/json'}});
+  try{const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(gtin)}.json?fields=product_name,brands,quantity,image_front_small_url,image_url`,{signal:c.signal,headers:{Accept:'application/json'}});
     if(!r.ok)return null;const j=await r.json();if(j.status!==1||!j.product)return null;const p=j.product;
     const brand=(p.brands||'').split(',')[0].trim();const nm=(p.product_name||'').trim();
-    if(!nm&&!brand)return null;
-    return [brand,nm,(p.quantity||'').trim()].filter(Boolean).join(' ').replace(/\s+/g,' ').slice(0,80);
+    const name=[brand,nm,(p.quantity||'').trim()].filter(Boolean).join(' ').replace(/\s+/g,' ').slice(0,80)||null;
+    const image=(p.image_front_small_url||p.image_url||'').trim()||null;
+    if(!name&&!image)return null;
+    return {name,image};
   }catch(e){return null}finally{clearTimeout(t)}
 }
 async function lookupName(gtin){
   if(window.__offStub)return window.__offStub(gtin);
   if(gtin in S.offCache)return S.offCache[gtin];
-  const n=await offFetch(gtin);S.offCache[gtin]=n;return n;
+  const r=await offFetch(gtin);S.offCache[gtin]=r;return r;
 }
 
 /* ---------- scanning ---------- */
@@ -500,11 +525,12 @@ function applyScan(raw){
   if(!sc.ok){$('#scan_in')?.focus();return}
   const set=(id,v)=>{const el=$('#'+id);if(el&&v!=null&&v!=='')el.value=v};
   set('lf_gtin',sc.gtin);set('lf_batch',sc.batch);
-  if(known)set('lf_product',known.name);
+  if(known){set('lf_product',known.name);sc.image=known.image||null;}
   if(sc.gtin&&!known&&(window.__offStub||navigator.onLine)){
     sc.lookup='busy';render();
-    lookupName(sc.gtin).then(name=>{
-      sc.lookup=name?'done':'none';
+    lookupName(sc.gtin).then(res=>{
+      const name=res&&res.name;sc.image=res&&res.image||null;
+      sc.lookup=(name||sc.image)?'done':'none';
       const pe=$('#lf_product');if(name&&pe&&!pe.value)pe.value=name;
       if(S.tab==='log')render();
     });
@@ -635,6 +661,8 @@ document.addEventListener('click',e=>{
   const d=t.dataset;
   if(d.camera){cam?stopCamera():startCamera();return}
   if(d.signout||t.id==='signOutBtn'){if(cam)stopCamera();signOut(auth);return}
+  if(t.id==='themeBtn'){cycleTheme();return}
+  if(d.restore){setItemStatus(d.restore,'restored');return}
   if(d.ownerClose){S.showOwner=false;render();return}
   if(d.recent){$('#li_user').value=d.recent;$('#li_pin').focus();return}
   if(d.tab&&cam)stopCamera();
@@ -659,6 +687,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   if(e.target.id==='f_status'){S.filter.status=e.target.value;render()}
   if(e.target.id==='lf_loc'){const w=$('#locOtherWrap');if(w){w.hidden=e.target.value!=='__other__';if(e.target.value==='__other__')$('#lf_loc_other')?.focus()}}
+  if(e.target.id==='photoToggle'){store.set('sdc_photos',e.target.checked?'1':null);render()}
 });
 document.addEventListener('submit',async e=>{
   e.preventDefault();const f=e.target;const btn=f.querySelector('button.primary')||f.querySelector('button');
@@ -709,8 +738,11 @@ document.addEventListener('submit',async e=>{
       bch.set(ref,{product,gtin,batch,expiry:l.expiry,qty:l.qty?Number(l.qty):null,location,notes,
         status:'active',loggedBy:b.by,loggedByName:b.byName,loggedAt:b.at,lastAction:'logged',lastBy:b.by,lastByName:b.byName,lastAt:b.at,
         history:[{action:'logged',...b}]});}
-    if(gtin&&!/^2/.test(gtin)&&S.products[gtin]?.name!==product)
-      bch.set(doc(fs,'products',gtin),{name:product,byName:b.byName,updatedAt:b.at});
+    if(gtin&&!/^2/.test(gtin)){
+      const img=(S.scan&&S.scan.gtin===gtin&&S.scan.image)||S.products[gtin]?.image||null;
+      if(S.products[gtin]?.name!==product||(img&&S.products[gtin]?.image!==img))
+        bch.set(doc(fs,'products',gtin),{name:product,image:img,byName:b.byName,updatedAt:b.at});
+    }
     let newSection=false;
     if(location&&selv==='__other__'&&!activeSections().some(x=>x.name.toLowerCase()===location.toLowerCase())){
       bch.set(doc(collection(fs,'sections')),{name:location,archived:false,order:Date.now(),createdAt:b.at,createdBy:b.byName||'staff',history:[]});
