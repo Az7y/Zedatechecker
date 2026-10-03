@@ -13,3 +13,7 @@ export const firebaseConfig = {
 // The owner login, used for first-time setup and as a backup admin.
 // Must match the email in the isOwner() check in firestore.rules.
 export const OWNER_EMAIL = "owner@example.com";
+
+// Where "Suggest an improvement" goes. Email for the mailto link; endpoint optional (e.g. a free Formspree URL) to also auto-email.
+export const FEEDBACK_EMAIL = "you@example.com";
+export const FEEDBACK_ENDPOINT = "";

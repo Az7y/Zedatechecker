@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot, getDoc, setDoc, updateDoc, addDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig, OWNER_EMAIL } from "./firebase-config.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, onSnapshot, getDoc, setDoc, updateDoc, addDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { firebaseConfig, OWNER_EMAIL, FEEDBACK_EMAIL, FEEDBACK_ENDPOINT } from "./firebase-config.js";
 
 const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
@@ -29,7 +29,7 @@ const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[],
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
   editStaff:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
-  lines:[{expiry:'',qty:''}], offCache:{} };
+  lines:[{expiry:'',qty:''}], offCache:{}, feedback:[] };
 
 /* GS1 barcode parsing. Handles plain EAN/UPC, and GS1-128 / DataMatrix / QR element strings
    (with or without brackets, with or without the group separator a scanner sends). */
@@ -83,6 +83,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
 // Per-device preferences
 const photosOn=()=>store.get('sdc_photos')==='1';
+function updatePhotoBtn(){const b=document.getElementById('photoBtn');if(!b)return;b.textContent=photosOn()?'▣ Photos':'▢ Photos';b.setAttribute('aria-pressed',photosOn());}
 function applyTheme(){const t=store.get('sdc_theme');const r=document.documentElement;if(t==='light'||t==='dark')r.dataset.theme=t;else r.removeAttribute('data-theme');}
 function cycleTheme(){const order=['system','light','dark'];const cur=store.get('sdc_theme')||'system';const next=order[(order.indexOf(cur)+1)%3];store.set('sdc_theme',next==='system'?null:next);applyTheme();updateThemeBtn();}
 function updateThemeBtn(){const b=$('#themeBtn');if(!b)return;const cur=store.get('sdc_theme')||'system';b.textContent=cur==='light'?'☀ Light':cur==='dark'?'☾ Dark':'◐ Auto';}
@@ -145,6 +146,7 @@ function startData(){
   listen(collection(fs,'items'),'items',s=>{S.items=s.docs.map(d=>({id:d.id,...d.data()}))});
   listen(collection(fs,'products'),'products',s=>{const m={};s.docs.forEach(d=>m[d.id]=d.data());S.products=m});
   listen(collection(fs,'sections'),'sections',s=>{S.sections=s.docs.map(d=>({id:d.id,...d.data()}))});
+  listen(collection(fs,'feedback'),'feedback',s=>{S.feedback=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.at||0)-(a.at||0))});
 }
 function resolveMe(){
   if(S.owner){S.me={id:'admin',name:'Admin',role:'manager',owner:true};return}
@@ -191,7 +193,7 @@ function render(){
   const tabs=Object.keys(TABS).filter(t=>!(S.me.owner&&t==='log'));
   if(!tabs.includes(S.tab))S.tab='today';
   $('#tabs').innerHTML=tabs.map(t=>`<button role="tab" data-tab="${t}" aria-selected="${t===S.tab}">${TABS[t]}</button>`).join('');
-  $('#whoName').textContent=S.me.name+' · '+ROLES[S.me.role||'staff'];updateThemeBtn();
+  $('#whoName').textContent=S.me.name+' · '+ROLES[S.me.role||'staff'];updateThemeBtn();updatePhotoBtn();
   $('#storeName').textContent=S.settings.store||'';
   app.innerHTML={today:todayView,log:logView,all:allView,activity:activityView,staff:staffView}[S.tab]();
   restore(keep,focused);
@@ -418,16 +420,25 @@ function myPinForm(){
     <label>New PIN (4 to 6 digits)<input id="mp_new" type="password" class="pin" inputmode="numeric" maxlength="6" required autocomplete="new-password"></label></div>
     <div id="mpErr"></div><button class="btn">Change PIN</button></form>`;
 }
-function displayPanel(){
-  return `<div class="panel" style="gap:8px"><h3>Display</h3>
-    <label class="switch"><input type="checkbox" id="photoToggle" ${photosOn()?'checked':''}> Show product photos as thumbnails</label>
-    <div class="note">Off shows a "Photo" link instead, lighter on data. Switch light/dark with the button in the top bar. Both are saved on this device only.</div></div>`;
+function feedbackPanel(){
+  return `<div class="panel" style="gap:8px"><h3>Suggest an improvement</h3>
+    <div class="note">An idea to make the app easier to use? Send it to Oz7y.</div>
+    <form id="feedbackForm" autocomplete="off" style="display:grid;gap:8px">
+      <textarea id="fb_msg" rows="3" maxlength="1000" required placeholder="What would make this better?"></textarea>
+      <div id="fbErr"></div>
+      <div class="actions"><button class="btn primary">Send</button>
+      ${FEEDBACK_EMAIL?`<button type="button" class="btn small" id="fbMail">Email instead</button>`:''}</div>
+    </form></div>`;
+}
+function feedbackList(){
+  if(!isAdmin()||!S.feedback.length)return '';
+  return `<div class="panel"><h3>Suggestions (${S.feedback.length})</h3><div class="log">${S.feedback.slice(0,40).map(f=>`<div class="row"><span class="t">${fmtTime(f.at)}</span><span><b>${esc(f.byName||'Someone')}</b>${f.role?` <span class="note">(${esc(ROLES[f.role]||f.role)})</span>`:''} ${esc(f.message)} <button class="btn small" data-fbdel="${f.id}">Dismiss</button></span></div>`).join('')}</div></div>`;
 }
 function staffView(){
   // Floor staff and supervisors only manage their own PIN.
   if(!isAdmin())return `<section class="view"><h2>My account</h2>
     <div class="panel" style="gap:4px"><b>${esc(S.me.name)}</b><div class="note">@${esc(S.me.username)} · ${ROLES[S.me.role]}</div></div>
-    ${displayPanel()}
+    ${feedbackPanel()}
     ${myPinForm()}</section>`;
   const list=[...S.staff].sort((a,b)=>(a.active===false)-(b.active===false)||RANK[b.role||'staff']-RANK[a.role||'staff']||a.name.localeCompare(b.name));
   const card=s=>{
@@ -479,7 +490,8 @@ function staffView(){
       <button class="btn small" data-sec-save="${s.id}">Rename</button><button class="btn small danger" data-sec-archive="${s.id}">Remove</button></div>`).join('')}</div>`:'<div class="note">No sections yet.</div>'}
     <form id="sectionForm" class="secrow"><input id="sec_name" required maxlength="40" placeholder="New section, e.g. Dairy chiller" aria-label="New section name"><button class="btn small primary">Add section</button></form>
   </div>
-  ${displayPanel()}
+  ${feedbackList()}
+  ${feedbackPanel()}
   ${S.me.owner?'':myPinForm()}
   </section>`;
 }
@@ -662,6 +674,9 @@ document.addEventListener('click',e=>{
   if(d.camera){cam?stopCamera():startCamera();return}
   if(d.signout||t.id==='signOutBtn'){if(cam)stopCamera();signOut(auth);return}
   if(t.id==='themeBtn'){cycleTheme();return}
+  if(t.id==='photoBtn'){store.set('sdc_photos',photosOn()?null:'1');render();return}
+  if(t.id==='fbMail'){const m=$('#fb_msg')?.value||'';if(FEEDBACK_EMAIL)location.href=`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Shelf Date Check suggestion')}&body=${encodeURIComponent(m)}`;return}
+  if(d.fbdel){if(isAdmin())quickWrite(deleteDoc(doc(fs,'feedback',d.fbdel)),'Dismissed');return}
   if(d.restore){setItemStatus(d.restore,'restored');return}
   if(d.ownerClose){S.showOwner=false;render();return}
   if(d.recent){$('#li_user').value=d.recent;$('#li_pin').focus();return}
@@ -687,7 +702,6 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   if(e.target.id==='f_status'){S.filter.status=e.target.value;render()}
   if(e.target.id==='lf_loc'){const w=$('#locOtherWrap');if(w){w.hidden=e.target.value!=='__other__';if(e.target.value==='__other__')$('#lf_loc_other')?.focus()}}
-  if(e.target.id==='photoToggle'){store.set('sdc_photos',e.target.checked?'1':null);render()}
 });
 document.addEventListener('submit',async e=>{
   e.preventDefault();const f=e.target;const btn=f.querySelector('button.primary')||f.querySelector('button');
@@ -764,6 +778,13 @@ document.addEventListener('submit',async e=>{
     quickWrite(updateDoc(doc(fs,'config','settings'),{morningBy:m,eveningBy:ev}),'Check times saved');return;
   }
   if(f.id==='staffForm'){addStaff();return}
+  if(f.id==='feedbackForm'){
+    const msg=$('#fb_msg').value.trim();if(!msg){$('#fbErr').innerHTML='<div class="errbox">Type your idea first.</div>';return}
+    const b=by();
+    quickWrite(addDoc(collection(fs,'feedback'),{message:msg.slice(0,1000),byName:b.byName||'Owner',role:S.me.role,at:b.at,version:'1.3'}),'Thanks, sent to Oz7y');
+    if(FEEDBACK_ENDPOINT){try{fetch(FEEDBACK_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({message:msg,from:b.byName||'Owner',role:S.me.role})}).catch(()=>{})}catch(e){}}
+    $('#fb_msg').value='';$('#fbErr').innerHTML='';render();return;
+  }
   if(f.id==='myPinForm'){
     const o=$('#mp_old').value,n=$('#mp_new').value;const err=m=>{$('#mpErr').innerHTML=`<div class="errbox">${m}</div>`};
     if(!PIN_RE.test(n))return err('New PIN must be 4 to 6 digits.');

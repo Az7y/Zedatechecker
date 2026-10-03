@@ -99,6 +99,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------- improvement suggestions ----------
+    match /feedback/{id} {
+      allow create: if canUse()
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 1000;
+      allow read, delete: if isManager();
+      allow update: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

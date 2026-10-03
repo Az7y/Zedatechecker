@@ -135,6 +135,7 @@ img{max-width:100%}
 .switch{display:flex;align-items:center;gap:10px;font-weight:600;color:var(--fg);font-size:14px}
 .switch input{width:auto;height:20px;width:20px}
 #themeBtn{min-width:72px}
+#photoBtn{min-width:86px}
 .flash{display:flex;align-items:center;gap:12px}
 .undo-btn{background:var(--accent);color:var(--accent-fg);border:0;border-radius:6px;padding:6px 11px;font:600 13px var(--body);cursor:pointer;white-space:nowrap}
 .qtywrap{display:inline-flex;align-items:center;gap:6px;vertical-align:middle}
@@ -152,7 +153,7 @@ img{max-width:100%}
   <div class="bar">
     <div class="brand">Shelf Date Check <span class="stamp">BB</span></div>
     <span class="note" id="storeName"></span>
-    <div class="who"><span class="net" id="netState" hidden>Offline, saving on device</span><span>On shift: <b id="whoName"></b></span><button class="btn small" id="themeBtn" type="button" title="Theme">◐ Auto</button><button class="btn small" id="signOutBtn">Sign out</button></div>
+    <div class="who"><span class="net" id="netState" hidden>Offline, saving on device</span><span>On shift: <b id="whoName"></b></span><button class="btn small" id="themeBtn" type="button" title="Theme">◐ Auto</button><button class="btn small" id="photoBtn" type="button" title="Product photos" aria-pressed="false">▢ Photos</button><button class="btn small" id="signOutBtn">Sign out</button></div>
   </div>
   <nav class="tabs" role="tablist" id="tabs"></nav>
 </header>
@@ -163,7 +164,7 @@ img{max-width:100%}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 3 Oct 2026 · v1.2 · Created by Oz7y · idea by Sameer</footer>
+<footer class="appfoot">Updated 3 Oct 2026 · v1.3 · Created by Oz7y · idea by Sameer</footer>
 <div class="flash" id="flash" hidden></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
