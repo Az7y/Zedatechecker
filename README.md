@@ -1,40 +1,68 @@
-# Shelf Date Check on Firebase
+# Shelf Date Check
 
-Your own copy of the shop's date check app, with a login for every staff member and a morning and evening check round. It runs on Google Firebase on the free plan, at a normal web address staff can add to their home screen. No Claude account needed.
+A shared out-of-date stock tracker for a grocery shop floor. Staff log products by use-by date and batch, tick off their morning and evening section checks, and managers see who did what, all from a phone on one web app.
 
-What's in this folder:
+Built for a real shop (Fresh, Stepaside, Dublin) to replace handwritten date-check sheets and handheld check devices.
 
-- `public/` is the app itself (index.html, app.js, icons)
-- `public/firebase-config.js` has your project's details (already filled in)
-- `firestore.rules` decides who can read and change the data (already set to your owner email)
-- `firebase.json` and `.firebaserc` tell Firebase how to deploy it
+![Platform](https://img.shields.io/badge/platform-web%20(PWA)-0d5c4a)
+![Backend](https://img.shields.io/badge/backend-Firebase-ffca28)
+![No build step](https://img.shields.io/badge/build-none-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-Already done for you: the Firebase project (`shelf-date-check`), the web app config, the owner email (`privaterelayoz7y@proton.me`), and the hosting site name (`zedatechecker`). You do NOT need to touch any of the files. Just do the console steps below and deploy. About 15 minutes.
+**Live:** https://zedatechecker.web.app (staff need a login)
 
-## 1. Create the owner login (if you haven't already)
+<p align="center">
+  <img src="docs/today.png" alt="Morning check screen" width="31%">
+  <img src="docs/log.png" alt="Logging a product with multiple dates" width="31%">
+  <img src="docs/all.png" alt="All items grouped by section" width="31%">
+</p>
 
-1. In the left menu go to **Build > Authentication** and click **Get started**.
-2. Under **Sign-in method**, enable **Email/Password** (leave "Email link" off).
-3. Go to the **Users** tab and click **Add user** with the owner email and a strong password.
+## What it does
 
-The owner login is hidden from staff and is only for first-time setup and as a backup if every manager gets locked out. Staff never see that it exists. Staff logins are created from inside the app.
+- **Morning and evening checks.** The Today screen opens on the current round and lists every section to check, with who ticked it and when. A progress bar and start-of-shift summary show what is still outstanding.
+- **Multi-date logging.** Log one product with several use-by dates and quantities at once (+ Add another date). Each date is saved as its own tracked entry.
+- **Barcode scanning.** Phone camera or a Bluetooth/USB scanner. Reads normal pack barcodes and supplier GS1-128 / DataMatrix / QR case labels, pulling batch and expiry straight off the label where present.
+- **Product name lookup.** Unknown barcodes are looked up on [Open Food Facts](https://world.openfoodfacts.org) and the suggested name is remembered locally after the first save, so it is instant and works offline next time.
+- **Sections.** Shelf areas (Aisle 1, Bread, Pizza fridge, and so on) drive both the check rota and the grouping on All items. Any staff member can add a new one while logging.
+- **Positions.** Floor staff, Supervisor, Manager. What each can do is enforced in the database rules, not just hidden in the UI.
+- **Activity log.** Every log, removal and section check is recorded with who did it and when, plus a 7-day tally per person.
+- **Works offline.** Entries save on the device on patchy shop Wi-Fi and sync when the connection returns.
 
-## 2. Create the database
+## How it is used
 
-1. Go to **Build > Firestore Database** and click **Create database**.
-2. Choose a location in Europe, for example `europe-west1 (Belgium)` or `europe-west2 (London)`. This can't be changed later.
-3. Start in **production mode**.
+Each staff member signs in on their own phone with a **username and PIN** and adds the app to their home screen. No app store, no shared device required.
 
-## 3. Owner email (already set)
+- **Floor staff** do the morning and evening checks, log products, remove from shelf, mark sold through, delete a mistaken entry.
+- **Supervisors** also undo a removal or sale.
+- **Managers** also run the Staff tab: add people, change positions, reset PINs, deactivate staff, set the check times and manage sections.
 
-The owner email is set in two places: `public/firebase-config.js` (`OWNER_EMAIL`) and `firestore.rules` (`isOwner`). Both are already filled in. If you ever change the owner account, update both and deploy again.
+There is a hidden owner login used only for first-time setup and as a backup if every manager is locked out.
 
-## 4. Put it online
+## Tech
 
-You need Node.js on your computer for this part.
+A single-page app with **no build step**: plain HTML, CSS and vanilla JavaScript.
 
-1. Install Node.js (the LTS version) from https://nodejs.org
-2. Open a terminal in this folder and run:
+- **Firebase Auth** (email/password behind friendly usernames) for per-person logins.
+- **Cloud Firestore** for realtime shared data with an offline cache.
+- **Firebase Hosting** for the static site.
+- [`html5-qrcode`](https://github.com/mebjas/html5-qrcode) for camera scanning; the [Open Food Facts](https://world.openfoodfacts.org/data) API for product names.
+
+Layout:
+
+```
+public/
+  index.html          app shell, styles, markup
+  app.js              all of the app logic
+  firebase-config.js  Firebase web config (not secret)
+  manifest.webmanifest, icon-*.png, icon.svg
+firestore.rules       access rules (the real security boundary)
+firebase.json         hosting + rules config
+SETUP.md              full Firebase setup and deploy walkthrough
+```
+
+## Run your own
+
+You need Node.js and a free Firebase project. Point `public/firebase-config.js` and the owner email in `firestore.rules` at your project, then:
 
 ```
 npm install -g firebase-tools
@@ -42,46 +70,28 @@ firebase login
 firebase deploy
 ```
 
-`firebase login` opens a browser to sign in with the same Google account. `firebase deploy` uploads the app and the database rules. At the end it prints your address, which looks like `https://your-project-id.web.app`.
+Full step-by-step, including Auth and Firestore setup, is in [SETUP.md](SETUP.md).
 
-If deploy says Hosting isn't set up, run `firebase init hosting`, pick your existing project, set the public folder to `public`, answer **No** to "single-page app" and **No** to overwriting `index.html`, then run `firebase deploy` again.
+## Security model
 
-## 5. First-time setup
+- Nothing is visible until a user signs in; the sign-in screen shows no names.
+- Positions are enforced in `firestore.rules`, so a floor-staff login cannot change positions, add people or undo removals even by calling the database directly.
+- Every write is signed with the person's own identity, so entries cannot be logged under someone else's name.
+- Items and staff are never hard-deleted, so the audit trail stands.
+- The Firebase web API key in `firebase-config.js` is public by design (it ships in the client either way); access is controlled by the rules, not the key.
 
-1. Open the web address. Tap the yellow **BB** badge five times to reach the admin sign-in.
-2. Sign in with the owner email (`privaterelayoz7y@proton.me`) and the password you set in step 1.
-3. Enter the store name and create the first manager (name, username, PIN). The app signs the owner out.
-4. Sign in as that manager with the username and PIN.
-5. In the **Staff** tab, add the team. Each person gets a username and a 4 to 6 digit PIN.
-6. In the **Staff** tab, under Date checks, add the sections you check (Dairy chiller, Bakery and so on) and set the morning and evening "due by" times.
+## Contributing
 
-Staff can then sign in on any phone with their own username and PIN, add the app to their home screen, and stay signed in. They can change their own PIN in the Staff tab. On a shared shop device, tap **Sign out** at the end of a shift.
+Issues and pull requests are welcome. It is a small, dependency-light codebase: almost everything lives in `public/app.js` and `public/index.html`, with access rules in `firestore.rules`.
 
-The first time someone taps **Scan with camera**, the phone asks for camera permission. Tap Allow.
+To work on it locally, point it at a throwaway Firebase project (see SETUP.md) and run `firebase serve` or `firebase emulators:start`. Keep the no-build, vanilla-JS approach, and remember that any new rule in the UI needs a matching rule in `firestore.rules`.
 
-## Day to day
+Ideas that would help: CSV export for audits, a recall-batch lookup, waste/markdown reporting, and per-round sections (some sections only checked once a day).
 
-- **Updating the app:** change the files, then run `firebase deploy` again. Devices pick up the new version next time they open it.
-- **Forgotten PIN:** a manager opens Staff, taps Manage on that person and sets a new PIN. The old PIN stops working straight away.
-- **Someone leaves:** a manager taps Deactivate. They can no longer sign in, but their name stays on everything they logged.
-- **Lost phone:** deactivate the person, then reactivate them with a new PIN.
-- **Poor Wi-Fi:** the app keeps working. Anything logged offline saves on the device and syncs when the connection returns. The top bar shows "Offline" while that's happening.
-- **Seeing the raw data:** Firestore Database in the console shows every item, staff member and change.
+## Credits
 
-## What it costs
+Created by **Oz7y**. Idea by **Sameer**.
 
-Nothing for one shop. The free plan allows tens of thousands of reads and writes a day, far more than a store's date checks will use. If you ever go over, Firebase stops serving until the next day rather than charging you, because the Spark plan has no card attached.
+## License
 
-## How secure it is
-
-- Nothing is visible until someone signs in. The sign-in screen shows no names.
-- Every person has their own login. PINs are never stored in the database.
-- Positions are enforced by the database rules, not just the app. Floor staff can't change positions, add people or undo removals, even with technical know-how.
-- Every change is signed with the person's own identity, so nobody can log something under someone else's name.
-- Items and staff can't be deleted, so the history stays honest.
-- Firebase blocks repeated wrong PIN attempts. A 4 digit PIN is still short, so 6 digits is better for managers.
-- Store only staff first names or names plus initial, and check with your manager that keeping this record is fine under the company's policies.
-
-## Morning and evening checks
-
-The Today screen opens on the current round: the morning check before opening, the evening check after 2pm. Each section is ticked off, showing who did it and when, and the evening screen also shows whether the morning round was finished. Staff get a start-of-shift summary when they sign in, and phones that support it show a count on the app icon. Alerts that arrive while the app is fully closed (push notifications) need a paid Firebase plan for the sending side, so they aren't included.
+MIT, see [LICENSE](LICENSE).
