@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Shelf Date Check</title>
+<meta name="theme-color" content="#0d5c4a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Date Check">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: a handheld shelf-scanner app. Sticky header with who's on shift, tab bar, one working column. */
+:root{
+  --bg:#eef1ef; --surface:#ffffff; --sunk:#e3e8e5; --fg:#17201c; --muted:#5b6762; --line:#cfd7d3;
+  --accent:#0d5c4a; --accent-fg:#ffffff; --tag:#ffd83d; --tag-fg:#2a2300;
+  --crit:#b3261e; --crit-bg:#fbe4e2; --warn:#9a5b00; --warn-bg:#fdefd6; --ok:#2f6b3a; --ok-bg:#e1f1e3;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101614; --surface:#18201d; --sunk:#0c110f; --fg:#e4ebe7; --muted:#97a59f; --line:#2b3632;
+  --accent:#5cc4a6; --accent-fg:#06221a; --tag:#f2cb2c; --tag-fg:#221c00;
+  --crit:#ff8a80; --crit-bg:#3a1714; --warn:#f3b65c; --warn-bg:#352708; --ok:#86d494; --ok-bg:#15301a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101614; --surface:#18201d; --sunk:#0c110f; --fg:#e4ebe7; --muted:#97a59f; --line:#2b3632;
+  --accent:#5cc4a6; --accent-fg:#06221a; --tag:#f2cb2c; --tag-fg:#221c00;
+  --crit:#ff8a80; --crit-bg:#3a1714; --warn:#f3b65c; --warn-bg:#352708; --ok:#86d494; --ok-bg:#15301a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--body)}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:0 48px}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar{max-width:760px;margin:0 auto;padding:12px 16px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{font:700 24px/1 var(--display);letter-spacing:.02em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.brand .stamp{background:var(--tag);color:var(--tag-fg);font:600 12px/1 var(--mono);padding:4px 6px;border-radius:3px;transform:rotate(-3deg)}
+.who{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.who b{color:var(--fg)}
+nav.tabs{max-width:760px;margin:0 auto;padding:8px 16px 0;display:flex;gap:4px;overflow-x:auto}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:8px 10px;font:600 14px var(--body);color:var(--muted);cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--fg);border-color:var(--accent)}
+h1,h2,h3{font-family:var(--display);text-transform:uppercase;letter-spacing:.03em;text-wrap:balance;margin:0}
+h2{font-size:22px} h3{font-size:17px;color:var(--muted)}
+section.view{display:grid;gap:20px;padding-top:20px}
+.btn{font:600 14px var(--body);border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:10px 14px;cursor:pointer;min-height:42px}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.tag{background:var(--tag);color:var(--tag-fg);border-color:var(--tag)}
+.btn.danger{color:var(--crit);border-color:var(--crit)}
+.btn.small{padding:6px 10px;min-height:34px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+label{display:grid;gap:4px;font-size:13px;font-weight:600;color:var(--muted)}
+input,select,textarea{font:15px var(--body);padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);width:100%;min-width:0}
+input.mono{font-family:var(--mono);text-transform:uppercase}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:14px}
+.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.count{border-radius:10px;padding:12px;display:grid;gap:2px;border:1px solid transparent;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.count .n{font:700 34px/1 var(--display);font-variant-numeric:tabular-nums}
+.count .l{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.count.crit{background:var(--crit-bg);color:var(--crit)} .count.warn{background:var(--warn-bg);color:var(--warn)} .count.ok{background:var(--ok-bg);color:var(--ok)}
+.list{display:grid;gap:8px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;align-items:start}
+.datebox{grid-row:span 3;width:64px;text-align:center;border-radius:6px;padding:6px 4px;font-variant-numeric:tabular-nums;border:1px solid var(--line)}
+.datebox .d{font:700 26px/1 var(--display)} .datebox .m{font:600 11px var(--mono);text-transform:uppercase}
+.datebox.crit{background:var(--crit-bg);color:var(--crit);border-color:transparent}
+.datebox.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.item .name{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.meta{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px;min-width:0}
+.batch{font-family:var(--mono);color:var(--fg);background:var(--sunk);padding:1px 6px;border-radius:4px}
+.pill{font:600 11px var(--body);text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:99px;display:inline-block}
+.pill.crit{background:var(--crit-bg);color:var(--crit)} .pill.warn{background:var(--warn-bg);color:var(--warn)} .pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.tagp{background:var(--tag);color:var(--tag-fg)} .pill.done{background:var(--sunk);color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:6px}
+.empty{color:var(--muted);text-align:center;padding:28px 12px;border:1px dashed var(--line);border-radius:10px}
+.note{font-size:13px;color:var(--muted)}
+.flash{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;z-index:20;max-width:calc(100% - 32px)}
+.warnbox{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 12px;font-size:14px}
+.errbox{background:var(--crit-bg);color:var(--crit);border-radius:8px;padding:10px 12px;font-size:14px}
+.staffpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.staffpick button{padding:14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:600 15px var(--body);cursor:pointer;text-align:left}
+.staffpick button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
+.pin{font:600 24px var(--mono);letter-spacing:.5em;text-align:center;max-width:200px}
+.log{display:grid;gap:0}
+.log .row{display:grid;grid-template-columns:92px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.log .t{color:var(--muted);font:500 12px var(--mono);font-variant-numeric:tabular-nums}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filters input{flex:1 1 200px}.filters select{flex:0 1 170px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
+.tablewrap{overflow-x:auto}
+.scan{border:2px dashed var(--accent);border-radius:12px;padding:14px;display:grid;gap:10px;background:var(--surface)}
+.scan input{font:600 18px var(--mono);letter-spacing:.04em}
+.scan .head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.readout{display:flex;flex-wrap:wrap;gap:6px}
+.readout span{font:500 12px var(--mono);background:var(--sunk);padding:3px 8px;border-radius:4px}
+.readout b{font-family:var(--body);font-weight:600;color:var(--muted);margin-right:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+html{color-scheme:light}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+#camBox{border-radius:10px;overflow:hidden;background:#000;max-width:100%}
+#camBox video{width:100%!important;display:block}
+.round{gap:12px}
+.round-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.round-count{font:600 16px var(--display);padding:6px 12px;border-radius:8px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.round-count b{font-size:30px;line-height:1}
+.round-count.ok{background:var(--ok-bg);color:var(--ok)}.round-count.warn{background:var(--warn-bg);color:var(--warn)}.round-count.crit{background:var(--crit-bg);color:var(--crit)}
+.meter{height:8px;border-radius:99px;background:var(--sunk);overflow:hidden}.meter span{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .3s}
+.round.past{background:var(--sunk);border-style:dashed}.round.past h2{font-size:18px}
+.checklist{display:grid;gap:0}
+.check-row{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--line);align-items:start}
+.check-body{min-width:0}
+.tick{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-weight:700;color:var(--accent-fg)}
+.check-row.done .tick{background:var(--accent);border-color:var(--accent)}
+.check-row.late .tick{border-color:var(--crit)}
+.check-row.done b{color:var(--muted)}
+.note-in{flex:1 1 160px;min-height:34px;padding:6px 10px;font-size:14px}
+.okbox{background:var(--ok-bg);color:var(--ok);border-radius:8px;padding:10px 12px;font-weight:600}
+.datelines{display:grid;gap:8px;border:1px solid var(--line);border-radius:10px;padding:12px}
+.dl-head{display:grid;grid-template-columns:1fr 84px 34px;gap:8px;font:600 11px var(--body);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.dline{display:grid;grid-template-columns:1fr 84px 34px;gap:8px;align-items:center}
+.dline .dl-qty{text-align:center}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted);padding:6px 8px}
+.btn.ghost:hover{color:var(--fg)}
+#lf_loc{width:100%}
+.appfoot{max-width:760px;margin:0 auto;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));text-align:center;color:var(--muted);font-size:12px;line-height:1.6}
+.seclist{display:grid;gap:8px}
+.secrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.secrow input{flex:1 1 160px;min-width:0}
+.net{background:var(--warn-bg);color:var(--warn);font:600 12px var(--body);padding:3px 8px;border-radius:99px}
+</style>
+</head>
+<body>
+
+<header class="top" id="top" hidden>
+  <div class="bar">
+    <div class="brand">Shelf Date Check <span class="stamp">BB</span></div>
+    <span class="note" id="storeName"></span>
+    <div class="who"><span class="net" id="netState" hidden>Offline, saving on device</span><span>On shift: <b id="whoName"></b></span><button class="btn small" id="signOutBtn">Sign out</button></div>
+  </div>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+</header>
+
+<main class="wrap" id="app">
+  <section class="view">
+    <div class="brand">Shelf Date Check <span class="stamp">BB</span></div>
+    <div class="empty">Starting up…</div>
+  </section>
+</main>
+<footer class="appfoot">Updated 3 Oct 2026 · v1.0 · Created by Oz7y · idea by Sameer</footer>
+<div class="flash" id="flash" hidden></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

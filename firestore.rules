@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- who is asking ----------
+    function signedIn() { return request.auth != null; }
+    function isOwner() {
+      return signedIn() && request.auth.token.email == 'privaterelayoz7y@proton.me';
+    }
+    function memberPath() { return /databases/$(database)/documents/members/$(request.auth.uid); }
+    function isMember() { return signedIn() && exists(memberPath()); }
+    function me() { return get(memberPath()).data; }
+    function isSupervisor() { return isOwner() || (isMember() && me().role in ['supervisor', 'manager']); }
+    function isManager() { return isOwner() || (isMember() && me().role == 'manager'); }
+    function canUse() { return isOwner() || isMember(); }
+    // Writes must be signed with the person's own staff id, so nobody can act as someone else.
+    function actingAsSelf(field) {
+      return isOwner() || (isMember() && request.resource.data[field] == me().staffId);
+    }
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---------- store settings ----------
+    match /config/settings {
+      allow read: if canUse();
+      allow create: if isOwner();
+      allow update: if isManager();
+      allow delete: if false;
+    }
+
+    // ---------- login lookup (username -> current login version) ----------
+    // Readable one at a time so the sign-in screen works, but the list of usernames can't be fetched.
+    match /logins/{username} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isManager();
+    }
+
+    // ---------- who can use the app, and their position ----------
+    match /members/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isManager());
+      allow create, update: if isManager()
+        && request.resource.data.role in ['manager', 'supervisor', 'staff'];
+      allow delete: if isManager();
+    }
+
+    // ---------- staff profiles ----------
+    match /staff/{staffId} {
+      allow read: if canUse();
+      allow create, update: if isManager()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.role in ['manager', 'supervisor', 'staff'];
+      allow delete: if false;  // deactivate instead, so history keeps the name
+    }
+
+    // ---------- logged products ----------
+    match /items/{itemId} {
+      allow read: if canUse();
+      allow create: if canUse()
+        && actingAsSelf('loggedBy')
+        && request.resource.data.product is string
+        && request.resource.data.product.size() <= 80
+        && request.resource.data.expiry is string
+        && request.resource.data.status == 'active';
+      allow update: if canUse()
+        && actingAsSelf('lastBy')
+        && request.resource.data.loggedBy == resource.data.loggedBy
+        && request.resource.data.loggedAt == resource.data.loggedAt
+        && request.resource.data.status in ['active', 'removed', 'sold', 'void']
+        // Anyone can remove, sell through, or delete a mistaken entry.
+        // Undoing a removal, sale or deletion (back to active) is supervisors and managers only.
+        && (!(resource.data.status in ['removed', 'sold', 'void'] && request.resource.data.status == 'active') || isSupervisor());
+      allow delete: if false;  // keep the audit trail
+    }
+
+    // ---------- product names remembered by barcode ----------
+    match /products/{gtin} {
+      allow read, create, update: if canUse();
+      allow delete: if false;
+    }
+
+    // ---------- sections ticked off in the morning and evening checks ----------
+    match /sections/{sectionId} {
+      allow read: if canUse();
+      // Any signed-in staff can add a section (e.g. while logging a product).
+      allow create: if canUse()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 40;
+      // Managers rename or remove sections; everyone can record a check under their own name.
+      allow update: if isManager()
+        || (isMember() && onlyChanged(['lastCheck', 'history'])
+            && request.resource.data.lastCheck.by == me().staffId);
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
