@@ -1,6 +1,6 @@
 {
-  "name": "Shelf Date Check",
-  "short_name": "Date Check",
+  "name": "Zedatechecker",
+  "short_name": "Zeda",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

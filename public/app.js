@@ -29,7 +29,7 @@ const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[],
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
   editStaff:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
-  lines:[{expiry:'',qty:''}], offCache:{}, feedback:[] };
+  lines:[{expiry:'',qty:''}], offCache:{}, feedback:[], nameImg:{}, sugTimer:null };
 
 /* GS1 barcode parsing. Handles plain EAN/UPC, and GS1-128 / DataMatrix / QR element strings
    (with or without brackets, with or without the group separator a scanner sends). */
@@ -127,9 +127,9 @@ function pastDue(round){const [h,m]=dueBy(round).split(':').map(Number);const n=
 const activeSections=()=>S.sections.filter(s=>s.archived!==true).sort((a,b)=>(a.order??0)-(b.order??0)||a.name.localeCompare(b.name));
 function roundState(round){const secs=activeSections();const rows=secs.map(s=>({s,c:roundCheck(s,round)}));return {rows,done:rows.filter(r=>r.c).length,total:rows.length}}
 function updateBadges(){
-  if(!S.me){document.title='Shelf Date Check';return}
+  if(!S.me){document.title='Zedatechecker';return}
   const r=roundState(currentRound());const left=r.total-r.done;const exp=liveItems().filter(i=>daysLeft(i.expiry)<0).length;const total=left+exp;
-  document.title=(total?`(${total}) `:'')+'Shelf Date Check';
+  document.title=(total?`(${total}) `:'')+'Zedatechecker';
   try{total?navigator.setAppBadge?.(total):navigator.clearAppBadge?.()}catch(e){}
 }
 
@@ -202,7 +202,8 @@ function render(){
   if(!S.briefed){S.briefed=true;briefing()}
 }
 function restore(keep,focused){for(const id in keep){const el=document.getElementById(id);if(el)el.value=keep[id]}if(focused){const el=document.getElementById(focused);if(el)el.focus()}}
-const brand=()=>`<div class="brand">Shelf Date Check <span class="stamp" data-stamp="1">BB</span></div>`;
+const LOGO='<svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect y="3" width="32" height="29" rx="7" fill="var(--accent)"/><rect x="9" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><rect x="20.4" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><path d="M10 19 l4 4 l9 -10" fill="none" stroke="var(--accent-fg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const brand=()=>`<div class="brand"><span class="mark-wrap" data-stamp="1">${LOGO}</span> Zedatechecker</div>`;
 function briefing(){
   if(S.me.owner)return;
   const round=currentRound(),r=roundState(round),exp=liveItems().filter(i=>daysLeft(i.expiry)<0).length;
@@ -241,7 +242,7 @@ function setupView(){
   <div><button class="btn small" data-signout="1">Sign out</button></div></section>`;
 }
 function itemPhoto(it){
-  const prod=it.gtin?S.products[it.gtin]:null;const photo=prod&&prod.image;if(!photo)return '';
+  const prod=it.gtin?S.products[it.gtin]:S.products['n_'+slug(it.product)];const photo=prod&&prod.image;if(!photo)return '';
   return photosOn()
     ?`<a class="thumb" href="${esc(photo)}" target="_blank" rel="noopener"><img src="${esc(photo)}" alt="photo" loading="lazy"></a>`
     :`<a class="plink" href="${esc(photo)}" target="_blank" rel="noopener">Photo</a>`;
@@ -345,6 +346,7 @@ function logView(){
     <input type="hidden" id="lf_gtin">
     <label>Product<input id="lf_product" required maxlength="80" list="prodlist" placeholder="Brand Product name, e.g. Avonmore Fresh Milk 2L"></label>
     <datalist id="prodlist">${prods.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+    <div id="nameSug" class="namesug"></div>
     <div class="grid2">
       <label>Batch / lot code (optional)<input id="lf_batch" class="mono" maxlength="40" placeholder="L2731"></label>
       <label>Section<select id="lf_loc">
@@ -526,6 +528,36 @@ async function lookupName(gtin){
   if(gtin in S.offCache)return S.offCache[gtin];
   const r=await offFetch(gtin);S.offCache[gtin]=r;return r;
 }
+const normName=v=>String(v||'').trim().toLowerCase();
+const slug=v=>normName(v).replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'x';
+// Search the open database by typed name, for autofill + photos.
+async function offSearch(q){
+  if(window.__offSearchStub)return window.__offSearchStub(q);
+  const c=new AbortController();const t=setTimeout(()=>c.abort(),6000);
+  try{const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,quantity,image_front_small_url`;
+    const r=await fetch(url,{signal:c.signal,headers:{Accept:'application/json'}});
+    if(!r.ok)return [];const j=await r.json();const out=[];const seen=new Set();
+    for(const p of (j.products||[])){
+      const brand=(p.brands||'').split(',')[0].trim();const nm=(p.product_name||'').trim();
+      const name=[brand,nm,(p.quantity||'').trim()].filter(Boolean).join(' ').replace(/\s+/g,' ').slice(0,80);
+      const image=(p.image_front_small_url||'').trim()||null;
+      if(name&&!seen.has(normName(name))){seen.add(normName(name));out.push({name,image})}
+      if(out.length>=5)break;
+    }
+    return out;
+  }catch(e){return []}finally{clearTimeout(t)}
+}
+function scheduleNameSearch(q){
+  clearTimeout(S.sugTimer);const v=(q||'').trim();
+  if(v.length<3){const el=$('#nameSug');if(el)el.innerHTML='';return}
+  S.sugTimer=setTimeout(async()=>{
+    const list=await offSearch(v);
+    list.forEach(x=>{if(x.image)S.nameImg[normName(x.name)]=x.image});
+    const dl=$('#prodlist');if(dl){const have=new Set([...dl.options].map(o=>o.value));list.forEach(x=>{if(!have.has(x.name)){const o=document.createElement('option');o.value=x.name;dl.appendChild(o)}})}
+    const el=$('#nameSug');if(!el)return;
+    el.innerHTML=list.length?`<div class="note">From the product database:</div>`+list.slice(0,4).map(x=>`<button type="button" class="sug" data-usesug="${esc(x.name)}" data-img="${esc(x.image||'')}">${x.image?`<img src="${esc(x.image)}" alt="" loading="lazy">`:'<span class="noimg"></span>'}<span>${esc(x.name)}</span></button>`).join(''):'';
+  },450);
+}
 
 /* ---------- scanning ---------- */
 function applyScan(raw){
@@ -672,6 +704,7 @@ document.addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   const d=t.dataset;
   if(d.camera){cam?stopCamera():startCamera();return}
+  if(d.usesug){const pe=$('#lf_product');if(pe)pe.value=d.usesug;if(d.img)S.nameImg[normName(d.usesug)]=d.img;const el=$('#nameSug');if(el)el.innerHTML='';checkDup();pe?.focus();return}
   if(d.signout||t.id==='signOutBtn'){if(cam)stopCamera();signOut(auth);return}
   if(t.id==='themeBtn'){cycleTheme();return}
   if(t.id==='photoBtn'){store.set('sdc_photos',photosOn()?null:'1');render();return}
@@ -697,6 +730,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('input',e=>{
   if(e.target.id==='f_q'){S.filter.q=e.target.value;render()}
   if(e.target.id==='lf_product'||e.target.id==='lf_batch')checkDup();
+  if(e.target.id==='lf_product')scheduleNameSearch(e.target.value);
   if(e.target.classList&&(e.target.classList.contains('dl-exp')||e.target.classList.contains('dl-qty')))S.lines=readLines();
 });
 document.addEventListener('change',e=>{
@@ -756,6 +790,10 @@ document.addEventListener('submit',async e=>{
       const img=(S.scan&&S.scan.gtin===gtin&&S.scan.image)||S.products[gtin]?.image||null;
       if(S.products[gtin]?.name!==product||(img&&S.products[gtin]?.image!==img))
         bch.set(doc(fs,'products',gtin),{name:product,image:img,byName:b.byName,updatedAt:b.at});
+    }else if(!gtin){
+      const key='n_'+slug(product);const img=S.nameImg[normName(product)]||S.products[key]?.image||null;
+      if(img&&S.products[key]?.image!==img)
+        bch.set(doc(fs,'products',key),{name:product,image:img,byName:b.byName,updatedAt:b.at});
     }
     let newSection=false;
     if(location&&selv==='__other__'&&!activeSections().some(x=>x.name.toLowerCase()===location.toLowerCase())){
@@ -763,7 +801,7 @@ document.addEventListener('submit',async e=>{
       newSection=true;
     }
     quickWrite(bch.commit(),`Saved ${lines.length} ${lines.length===1?'entry':'entries'}: ${product}${newSection?` · new section "${location}" added`:''}`);
-    S.scan=null;S.lines=[{expiry:'',qty:''}];
+    S.scan=null;S.lines=[{expiry:'',qty:''}];const sg=$('#nameSug');if(sg)sg.innerHTML='';
     ['lf_product','lf_gtin','lf_batch','lf_notes'].forEach(id=>{const el=$('#'+id);if(el)el.value=''});
     render();$('#scan_in')?.focus();return;
   }
