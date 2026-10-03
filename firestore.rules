@@ -72,7 +72,10 @@ service cloud.firestore {
         && request.resource.data.status in ['active', 'removed', 'sold', 'void']
         // Anyone can remove, sell through, or delete a mistaken entry.
         // Undoing a removal, sale or deletion (back to active) is supervisors and managers only.
-        && (!(resource.data.status in ['removed', 'sold', 'void'] && request.resource.data.status == 'active') || isSupervisor());
+        && (!(resource.data.status in ['removed', 'sold', 'void'] && request.resource.data.status == 'active')
+            || isSupervisor()
+            // the person who just removed/sold/deleted it can undo their own action within ~15s
+            || (isMember() && resource.data.lastBy == me().staffId && request.time.toMillis() - resource.data.lastAt < 15000));
       allow delete: if false;  // keep the audit trail
     }
 

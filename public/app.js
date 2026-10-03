@@ -81,7 +81,17 @@ function parseScan(raw){
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
-function flash(msg){const f=$('#flash');f.textContent=msg;f.hidden=false;clearTimeout(flash.t);flash.t=setTimeout(()=>f.hidden=true,3000)}
+function flash(msg){const f=$('#flash');clearTimeout(flash.t);clearTimeout(undo.t);clearInterval(undo.i);f.textContent=msg;f.hidden=false;flash.t=setTimeout(()=>f.hidden=true,3000)}
+const undo={t:null,i:null};
+// A 10-second window to undo the action just taken.
+function showUndo(msg,revertFn){
+  const f=$('#flash');clearTimeout(flash.t);clearTimeout(undo.t);clearInterval(undo.i);
+  let left=10;const paint=()=>{f.innerHTML=`<span>${esc(msg)}</span><button type="button" class="undo-btn">Undo (${left})</button>`;};
+  paint();f.hidden=false;
+  undo.i=setInterval(()=>{left--;if(left<=0){clearInterval(undo.i)}else paint()},1000);
+  undo.t=setTimeout(()=>{f.hidden=true;clearInterval(undo.i)},10000);
+  const btn=f.querySelector('.undo-btn');if(btn)btn.onclick=()=>{clearTimeout(undo.t);clearInterval(undo.i);f.hidden=true;revertFn()};
+}
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function daysLeft(exp){const [y,m,d]=exp.split('-').map(Number);const t=new Date();const a=Date.UTC(y,m-1,d),b=Date.UTC(t.getFullYear(),t.getMonth(),t.getDate());return Math.round((a-b)/86400000)}
 function band(n){return n<=2?'crit':n<=7?'warn':'ok'}
@@ -90,7 +100,7 @@ const pad=n=>String(n).padStart(2,'0');
 function fmtTime(ms){const d=new Date(ms);return `${pad(d.getDate())} ${MON[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`}
 const clock=ms=>{const d=new Date(ms);return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const STATUS={active:'On shelf',reduced:'On shelf',removed:'Removed',sold:'Sold through',void:'Deleted'};
-const ACTION={logged:'logged',reduced:'reduced',removed:'removed from shelf',sold:'marked sold through',restored:'put back on shelf',void:'deleted (mistake)'};
+const ACTION={logged:'logged',reduced:'reduced',removed:'removed from shelf',sold:'marked sold through',restored:'put back on shelf',void:'deleted (mistake)',adjusted:'changed the count'};
 const ROLES={manager:'Manager',supervisor:'Supervisor',staff:'Floor staff'};
 const RANK={staff:1,supervisor:2,manager:3};
 const atLeast=r=>(RANK[S.me?.role]||1)>=RANK[r];
@@ -222,12 +232,16 @@ function setupView(){
   </form>
   <div><button class="btn small" data-signout="1">Sign out</button></div></section>`;
 }
+function qtyControl(it,live){
+  if(!live||S.me.owner)return it.qty?`<span class="note">× ${esc(it.qty)}</span>`:'';
+  return `<span class="qtywrap"><button type="button" class="qbtn" data-qtyminus="${it.id}" aria-label="Decrease count">&minus;</button><span class="qnum" data-qty="${it.id}">× ${esc(it.qty||0)}</span><button type="button" class="qbtn" data-qtyplus="${it.id}" aria-label="Increase count">+</button></span>`;
+}
 function itemCard(it){
   const n=daysLeft(it.expiry);const [y,m,d]=it.expiry.split('-');const live=it.status==='active'||it.status==='reduced';
   const b=live?band(n):'';const acts=!S.me.owner;
   return `<div class="item">
     <div class="datebox ${b==='ok'?'':b}"><div class="d">${+d}</div><div class="m">${MON[+m-1]} ${y.slice(2)}</div></div>
-    <div class="name">${esc(it.product)} ${it.qty?`<span class="note">× ${esc(it.qty)}</span>`:''}</div>
+    <div class="name">${esc(it.product)} ${qtyControl(it,live)}</div>
     <div class="meta"><span class="batch">${esc(it.batch||'no batch')}</span>${it.location?`<span>${esc(it.location)}</span>`:''}
       ${live?`<span class="pill ${band(n)}">${dueLabel(n)}</span>`:`<span class="pill done">${STATUS[it.status]}</span>`}</div>
     <div class="meta"><span>Logged by ${esc(it.loggedByName)} · ${fmtTime(it.loggedAt)}</span>
@@ -520,12 +534,32 @@ function checkDup(){
 function quickWrite(p,ok){if(ok)flash(navigator.onLine?ok:ok+' (will sync when back online)');p.catch(e=>flash('Not saved: '+errText(e)))}
 // Admin actions are logged without a name, so nothing in the app reveals the admin login.
 const by=()=>S.me.owner?{by:'admin',byName:'',at:Date.now()}:{by:S.me.id,byName:S.me.name,at:Date.now()};
+const UNDOABLE=['removed','sold','void'];
 function setItemStatus(id,act){
   const it=S.items.find(i=>i.id===id);if(!it||S.me.owner)return;
   if(act==='restored'&&!atLeast('supervisor')){flash('Ask a supervisor or manager to undo this');return}
+  const prevStatus=it.status,prevHistory=(it.history||[]).slice();
   const status=act==='restored'?'active':act;const b=by();
   const history=[...(it.history||[]),{action:act,...b}].slice(-30);
-  quickWrite(updateDoc(doc(fs,'items',id),{status,history,lastAction:act,lastBy:b.by,lastByName:b.byName,lastAt:b.at}),`${it.product}: ${ACTION[act]}`);
+  quickWrite(updateDoc(doc(fs,'items',id),{status,history,lastAction:act,lastBy:b.by,lastByName:b.byName,lastAt:b.at}),
+    UNDOABLE.includes(act)?null:`${it.product}: ${ACTION[act]}`);
+  if(UNDOABLE.includes(act))showUndo(`${it.product}: ${ACTION[act]}`,()=>revertItem(id,prevStatus,prevHistory));
+}
+// Put the item back exactly as it was (used by the 10-second undo).
+function revertItem(id,status,history){
+  const last=history.length?history[history.length-1]:{action:'logged'};const b=by();
+  quickWrite(updateDoc(doc(fs,'items',id),{status,history,lastAction:last.action,lastBy:b.by,lastByName:b.byName,lastAt:b.at}),'Undone');
+}
+// +/- shelf count beside an item. Taps are coalesced into one write after a short pause.
+const qtyTimers={},qtyPending={};
+function adjustQty(id,delta){
+  const it=S.items.find(i=>i.id===id);if(!it||S.me.owner)return;
+  const base=qtyPending[id]!=null?qtyPending[id]:(Number(it.qty)||0);
+  const next=Math.max(0,base+delta);qtyPending[id]=next;it.qty=next;
+  const span=document.querySelector(`[data-qty="${id}"]`);if(span)span.textContent='× '+next;
+  clearTimeout(qtyTimers[id]);
+  qtyTimers[id]=setTimeout(()=>{const v=qtyPending[id];delete qtyPending[id];const b=by();
+    quickWrite(updateDoc(doc(fs,'items',id),{qty:v,lastAction:'adjusted',lastBy:b.by,lastByName:b.byName,lastAt:b.at}),null);},700);
 }
 function checkSection(id){
   const s=S.sections.find(x=>x.id===id);if(!s||S.me.owner)return;
@@ -605,6 +639,8 @@ document.addEventListener('click',e=>{
   if(d.recent){$('#li_user').value=d.recent;$('#li_pin').focus();return}
   if(d.tab&&cam)stopCamera();
   if(d.tab){S.tab=d.tab;window.scrollTo(0,0);render();if(S.tab==='log')$('#scan_in')?.focus();return}
+  if(d.qtyplus){adjustQty(d.qtyplus,1);return}
+  if(d.qtyminus){adjustQty(d.qtyminus,-1);return}
   if(d.act){t.disabled=true;setItemStatus(d.id,d.act);return}
   if(d.check){t.disabled=true;checkSection(d.check);return}
   if(d.addline){S.lines=readLines();S.lines.push({expiry:'',qty:''});render();return}
