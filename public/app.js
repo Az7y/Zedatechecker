@@ -190,7 +190,7 @@ function render(){
   if(!S.settings){top.hidden=true;app.innerHTML=S.owner?setupView():`<section class="view">${brand()}<div class="empty">The app hasn't been set up for this store yet. Ask your manager.</div><div><button class="btn" data-signout="1">Sign out</button></div></section>`;restore(keep,focused);return}
   if(!S.loaded.staff||!S.loaded.items||!S.loaded.sections||!S.me){app.innerHTML=`<section class="view">${brand()}<div class="empty">Loading the store's list…</div></section>`;return}
   top.hidden=false;
-  const tabs=Object.keys(TABS).filter(t=>!(S.me.owner&&t==='log'));
+  const tabs=Object.keys(TABS).filter(t=>!(S.me.owner&&t==='log')&&!(t==='activity'&&!S.me.owner));
   if(!tabs.includes(S.tab))S.tab='today';
   $('#tabs').innerHTML=tabs.map(t=>`<button role="tab" data-tab="${t}" aria-selected="${t===S.tab}">${TABS[t]}</button>`).join('');
   $('#whoName').textContent=S.me.name+' · '+ROLES[S.me.role||'staff'];updateThemeBtn();updatePhotoBtn();
@@ -346,9 +346,8 @@ function todayView(){
       <div class="count warn"><span class="n">${week.length}</span><span class="l">3–7 days</span></div>
     </div>
     ${live.length===0?`<div class="empty">Nothing logged yet. Go to <b>Log product</b> and add the first item you check, with its batch code and use-by date.</div>`:''}
-    ${block('Expired, pull from shelf',exp,'Nothing past its date.')}
-    ${block('Expiring in the next 2 days',soon,'Nothing due in the next 2 days.')}
-    ${block('Expiring this week',week,'Nothing else due this week.')}
+    ${(()=>{const blocks=[['Expired, pull from shelf',exp,'Nothing past its date.'],['Expiring in the next 2 days',soon,'Nothing due in the next 2 days.'],['Expiring this week',week,'Nothing else due this week.']];
+      return [...blocks.filter(x=>x[1].length),...blocks.filter(x=>!x[1].length)].map(x=>block(x[0],x[1],x[2])).join('');})()}
   </section>`;
 }
 function logView(){
@@ -442,6 +441,7 @@ function allView(){
     ${body}</section>`;
 }
 function activityView(){
+  if(!S.me.owner)return `<section class="view"><h2>Activity</h2><div class="empty">The activity log is for the owner.</div></section>`;
   const ev=[];
   for(const it of S.items)for(const h of (it.history||[]))if(h.byName){
     const canRestore=['removed','sold','void'].includes(h.action)&&it.status===h.action&&it.lastAt===h.at&&atLeast('supervisor')&&!S.me.owner;
@@ -471,7 +471,7 @@ function feedbackPanel(){
     </form></div>`;
 }
 function feedbackList(){
-  if(!isAdmin()||!S.feedback.length)return '';
+  if(!S.me.owner||!S.feedback.length)return '';
   return `<div class="panel"><h3>Suggestions (${S.feedback.length})</h3><div class="log">${S.feedback.slice(0,40).map(f=>`<div class="row"><span class="t">${fmtTime(f.at)}</span><span><b>${esc(f.byName||'Someone')}</b>${f.role?` <span class="note">(${esc(ROLES[f.role]||f.role)})</span>`:''} ${esc(f.message)} <button class="btn small" data-fbdel="${f.id}">Dismiss</button></span></div>`).join('')}</div></div>`;
 }
 function staffView(){
@@ -748,7 +748,7 @@ document.addEventListener('click',e=>{
   if(t.id==='themeBtn'){cycleTheme();return}
   if(t.id==='photoBtn'){store.set('sdc_photos',photosOn()?null:'1');render();return}
   if(t.id==='fbMail'){const m=$('#fb_msg')?.value||'';if(FEEDBACK_EMAIL)location.href=`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Shelf Date Check suggestion')}&body=${encodeURIComponent(m)}`;return}
-  if(d.fbdel){if(isAdmin())quickWrite(deleteDoc(doc(fs,'feedback',d.fbdel)),'Dismissed');return}
+  if(d.fbdel){if(S.me.owner)quickWrite(deleteDoc(doc(fs,'feedback',d.fbdel)),'Dismissed');return}
   if(d.restore){setItemStatus(d.restore,'restored');return}
   if(d.ownerClose){S.showOwner=false;render();return}
   if(d.recent){$('#li_user').value=d.recent;$('#li_pin').focus();return}
