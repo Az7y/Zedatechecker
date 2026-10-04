@@ -69,9 +69,10 @@ input.mono{font-family:var(--mono);text-transform:uppercase}
 .datebox.crit{background:var(--crit-bg);color:var(--crit);border-color:transparent}
 .datebox.warn{background:var(--warn-bg);color:var(--warn);border-color:transparent}
 .item .name{font-weight:600;min-width:0;overflow-wrap:anywhere}
-.meta{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px;min-width:0}
-.batch{font-family:var(--mono);color:var(--fg);background:var(--sunk);padding:1px 6px;border-radius:4px}
-.pill{font:600 11px var(--body);text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:99px;display:inline-block}
+.meta{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-width:0}
+.batch{font-family:var(--mono);color:var(--fg);background:transparent;border:1px solid var(--line);padding:1px 7px;border-radius:5px;line-height:1.5;display:inline-block}
+.nobatch{color:var(--muted);font-size:12px}
+.pill{font:600 11px/1.6 var(--body);text-transform:uppercase;letter-spacing:.06em;padding:2px 9px;border-radius:99px;display:inline-block;white-space:nowrap}
 .pill.crit{background:var(--crit-bg);color:var(--crit)} .pill.warn{background:var(--warn-bg);color:var(--warn)} .pill.ok{background:var(--ok-bg);color:var(--ok)}
 .pill.tagp{background:var(--tag);color:var(--tag-fg)} .pill.done{background:var(--sunk);color:var(--muted)}
 .actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:6px}
@@ -106,13 +107,19 @@ body{margin:0}
 img{max-width:100%}
 #camBox{border-radius:10px;overflow:hidden;background:#000;max-width:100%}
 #camBox video{width:100%!important;display:block}
-.round{gap:12px}
+.round{gap:0;padding:0}
+.round-sum{list-style:none;cursor:pointer;display:block;position:relative;padding:16px 40px 16px 16px}
+.round-sum::-webkit-details-marker{display:none}
+.round-sum::after{content:"";position:absolute;right:18px;top:22px;width:9px;height:9px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .2s}
+details[open]>.round-sum::after{transform:rotate(-135deg)}
+.round-sum .meter{margin-top:10px}
+.round-body{padding:0 16px 16px}
 .round-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .round-count{font:600 16px var(--display);padding:6px 12px;border-radius:8px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .round-count b{font-size:30px;line-height:1}
 .round-count.ok{background:var(--ok-bg);color:var(--ok)}.round-count.warn{background:var(--warn-bg);color:var(--warn)}.round-count.crit{background:var(--crit-bg);color:var(--crit)}
 .meter{height:8px;border-radius:99px;background:var(--sunk);overflow:hidden}.meter span{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .3s}
-.round.past{background:var(--sunk);border-style:dashed}.round.past h2{font-size:18px}
+.round.past{background:var(--sunk);border-style:dashed}.round.past h2{font-size:18px}.round.past .round-sum{padding-bottom:0}
 .checklist{display:grid;gap:0}
 .check-row{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--line);align-items:start}
 .check-body{min-width:0}
@@ -171,7 +178,7 @@ img{max-width:100%}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 3 Oct 2026 · v1.5 · Created by Oz7y · idea by Sameer</footer>
+<footer class="appfoot">Updated 4 Oct 2026 · v1.6 · Created by Oz7y · idea by Sameer</footer>
 <div class="flash" id="flash" hidden></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>

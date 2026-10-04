@@ -294,7 +294,7 @@ function itemCard(it){
   return `<div class="item">
     <div class="datebox ${b==='ok'?'':b}"><div class="d">${+d}</div><div class="m">${MON[+m-1]} ${y.slice(2)}</div></div>
     <div class="name">${esc(it.product)} ${qtyControl(it,live)}</div>
-    <div class="meta"><span class="batch">${esc(it.batch||'no batch')}</span>${it.location?`<span>${esc(it.location)}</span>`:''}
+    <div class="meta">${it.batch?`<span class="batch">${esc(it.batch)}</span>`:'<span class="nobatch">no batch</span>'}${it.location?`<span>${esc(it.location)}</span>`:''}
       ${itemPhoto(it)}
       ${live?`<span class="pill ${band(n)}">${dueLabel(n)}</span>`:`<span class="pill done">${STATUS[it.status]}</span>`}</div>
     <div class="meta"><span>Logged by ${esc(it.loggedByName)} · ${fmtTime(it.loggedAt)}</span>
@@ -312,14 +312,15 @@ function itemCard(it){
 function roundPanel(round,active){
   const r=roundState(round);const late=pastDue(round);
   const pct=r.total?Math.round(r.done/r.total*100):0;const complete=r.total&&r.done===r.total;
-  const head=`<div class="round-head"><div><h2>${ROUND[round]}</h2><div class="note">${round==='morning'?'Before opening':'Before closing'}, due by ${esc(dueBy(round))}</div></div>
+  const sum=`<summary class="round-sum"><div class="round-head"><div><h2>${ROUND[round]}</h2><div class="note">${round==='morning'?'Before opening':'Before closing'}, due by ${esc(dueBy(round))}</div></div>
     <div class="round-count ${complete?'ok':late?'crit':'warn'}"><b>${r.done}</b>/${r.total}</div></div>
-    <div class="meter" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>`;
+    <div class="meter" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div></summary>`;
   if(!active){
     const missed=r.rows.filter(x=>!x.c).map(x=>x.s.name);
-    return `<div class="panel round past">${head}<div class="note">${complete?'All sections were checked.':`Not checked: ${missed.map(esc).join(', ')}`}</div></div>`;
+    return `<details class="panel round past">${sum}<div class="round-body"><div class="note">${complete?'All sections were checked.':`Not checked: ${missed.map(esc).join(', ')}`}</div></div></details>`;
   }
-  return `<div class="panel round">${head}
+  return `<details class="panel round" ${complete?'':'open'}>${sum}
+    <div class="round-body">
     ${complete?`<div class="okbox">All sections checked. Nice work.</div>`:''}
     <div class="checklist">${r.rows.map(({s,c})=>`<div class="check-row ${c?'done':late?'late':''}">
       <span class="tick" aria-hidden="true">${c?'&#10003;':''}</span>
@@ -328,8 +329,8 @@ function roundPanel(round,active){
         ${!c&&!S.me.owner?`<div class="actions" style="padding-top:6px">
           <input id="cn_${s.id}" placeholder="Note (optional), e.g. 2 pulled" maxlength="80" class="note-in">
           <button class="btn small primary" data-check="${s.id}">Checked</button></div>`:''}
-      </div></div>`).join('')}</div>
-  </div>`;
+      </div></div>`).join('')}</div></div>
+  </details>`;
 }
 function todayView(){
   const live=liveItems().sort((a,b)=>a.expiry.localeCompare(b.expiry));
