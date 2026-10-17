@@ -92,11 +92,15 @@ const undo={t:null,i:null};
 // A 10-second window to undo the action just taken.
 function showUndo(msg,revertFn){
   const f=$('#flash');clearTimeout(flash.t);clearTimeout(undo.t);clearInterval(undo.i);
-  let left=10;const paint=()=>{f.innerHTML=`<span>${esc(msg)}</span><button type="button" class="undo-btn">Undo (${left})</button>`;};
-  paint();f.hidden=false;
-  undo.i=setInterval(()=>{left--;if(left<=0){clearInterval(undo.i)}else paint()},1000);
+  let left=10;
+  // Build once and only update the countdown number, so the button's click handler
+  // stays alive for the full 10 seconds (rebuilding it each tick dropped the handler).
+  f.innerHTML=`<span>${esc(msg)}</span><button type="button" class="undo-btn">Undo (<span class="undo-n">${left}</span>)</button>`;
+  f.hidden=false;
+  const btn=f.querySelector('.undo-btn');const nEl=f.querySelector('.undo-n');
+  if(btn)btn.onclick=()=>{clearTimeout(undo.t);clearInterval(undo.i);f.hidden=true;revertFn()};
+  undo.i=setInterval(()=>{left--;if(left<=0){clearInterval(undo.i)}else if(nEl)nEl.textContent=left;},1000);
   undo.t=setTimeout(()=>{f.hidden=true;clearInterval(undo.i)},10000);
-  const btn=f.querySelector('.undo-btn');if(btn)btn.onclick=()=>{clearTimeout(undo.t);clearInterval(undo.i);f.hidden=true;revertFn()};
 }
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function daysLeft(exp){const [y,m,d]=exp.split('-').map(Number);const t=new Date();const a=Date.UTC(y,m-1,d),b=Date.UTC(t.getFullYear(),t.getMonth(),t.getDate());return Math.round((a-b)/86400000)}
