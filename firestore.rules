@@ -11,8 +11,8 @@ service cloud.firestore {
     function memberPath() { return /databases/$(database)/documents/members/$(request.auth.uid); }
     function isMember() { return signedIn() && exists(memberPath()); }
     function me() { return get(memberPath()).data; }
-    function isSupervisor() { return isOwner() || (isMember() && me().role in ['supervisor', 'manager']); }
-    function isManager() { return isOwner() || (isMember() && me().role == 'manager'); }
+    // Director = the manager/admin position. 'manager' is the legacy name, still honoured.
+    function isManager() { return isOwner() || (isMember() && me().role in ['manager', 'director']); }
     function canUse() { return isOwner() || isMember(); }
     // Writes must be signed with the person's own staff id, so nobody can act as someone else.
     function actingAsSelf(field) {
@@ -42,7 +42,7 @@ service cloud.firestore {
     match /members/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isManager());
       allow create, update: if isManager()
-        && request.resource.data.role in ['manager', 'supervisor', 'staff'];
+        && request.resource.data.role in ['manager', 'supervisor', 'staff', 'director', 'npc'];
       allow delete: if isManager();
     }
 
@@ -52,7 +52,7 @@ service cloud.firestore {
       allow create, update: if isManager()
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 40
-        && request.resource.data.role in ['manager', 'supervisor', 'staff'];
+        && request.resource.data.role in ['manager', 'supervisor', 'staff', 'director', 'npc'];
       allow delete: if false;  // deactivate instead, so history keeps the name
     }
 
@@ -71,9 +71,9 @@ service cloud.firestore {
         && request.resource.data.loggedAt == resource.data.loggedAt
         && request.resource.data.status in ['active', 'removed', 'sold', 'void']
         // Anyone can remove, sell through, or delete a mistaken entry.
-        // Undoing a removal, sale or deletion (back to active) is supervisors and managers only.
+        // Putting an item back (back to active) is Directors and the Boss only.
         && (!(resource.data.status in ['removed', 'sold', 'void'] && request.resource.data.status == 'active')
-            || isSupervisor()
+            || isManager()
             // the person who just removed/sold/deleted it can undo their own action within ~15s
             || (isMember() && resource.data.lastBy == me().staffId && request.time.toMillis() - resource.data.lastAt < 15000));
       allow delete: if false;  // keep the audit trail

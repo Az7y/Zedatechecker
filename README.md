@@ -24,7 +24,7 @@ Built for a real shop (Fresh, Stepaside, Dublin) to replace handwritten date-che
 - **Barcode scanning.** Phone camera or a Bluetooth/USB scanner. Reads normal pack barcodes and supplier GS1-128 / DataMatrix / QR case labels, pulling batch and expiry straight off the label where present.
 - **Product name lookup.** Unknown barcodes are looked up on [Open Food Facts](https://world.openfoodfacts.org) and the suggested name is remembered locally after the first save, so it is instant and works offline next time.
 - **Sections.** Shelf areas (Aisle 1, Bread, Pizza fridge, and so on) drive both the check rota and the grouping on All items. Any staff member can add a new one while logging.
-- **Positions.** Floor staff, Supervisor, Manager. What each can do is enforced in the database rules, not just hidden in the UI.
+- **Positions.** Two staff positions, NPC and Director, plus a hidden Boss (owner). What each can do is enforced in the database rules, not just hidden in the UI.
 - **Activity log.** Every log, removal and section check is recorded with who did it and when, plus a 7-day tally per person.
 - **Works offline.** Entries save on the device on patchy shop Wi-Fi and sync when the connection returns.
 
@@ -32,11 +32,11 @@ Built for a real shop (Fresh, Stepaside, Dublin) to replace handwritten date-che
 
 Each staff member signs in on their own phone with a **username and PIN** and adds the app to their home screen. No app store, no shared device required.
 
-- **Floor staff** do the morning and evening checks, log products, remove from shelf, mark sold through, delete a mistaken entry.
-- **Supervisors** also undo a removal or sale.
-- **Managers** also run the Staff tab: add people, change positions, reset PINs, deactivate staff, set the check times and manage sections.
+- **NPC** do the morning and evening checks, log products, remove from shelf, mark sold through, delete a mistaken entry, and change their own PIN.
+- **Directors** also put items back on the shelf, see the activity log, and run the Staff tab: add people, change positions, reset PINs, deactivate staff, reorder sections and set the check times.
+- **Boss** has full access to everything, including the suggestions inbox.
 
-There is a hidden owner login used only for first-time setup and as a backup if every manager is locked out.
+There is a hidden Boss login used only for first-time setup and as a backup if every Director is locked out.
 
 ## Tech
 

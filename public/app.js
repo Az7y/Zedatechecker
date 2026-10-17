@@ -107,11 +107,15 @@ function fmtTime(ms){const d=new Date(ms);return `${pad(d.getDate())} ${MON[d.ge
 const clock=ms=>{const d=new Date(ms);return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const STATUS={active:'On shelf',reduced:'On shelf',removed:'Removed',sold:'Sold through',void:'Deleted'};
 const ACTION={logged:'logged',reduced:'reduced',removed:'removed from shelf',sold:'marked sold through',restored:'put back on shelf',void:'deleted (mistake)',adjusted:'changed the count'};
-const ROLES={manager:'Manager',supervisor:'Supervisor',staff:'Floor staff'};
-const RANK={staff:1,supervisor:2,manager:3};
-const atLeast=r=>(RANK[S.me?.role]||1)>=RANK[r];
-const isAdmin=()=>S.me?.role==='manager'; // managers, and the hidden owner who acts as one
-const activeManagers=()=>S.staff.filter(s=>s.role==='manager'&&s.active!==false);
+const ROLES={director:'Director',npc:'NPC'};
+// Legacy data may still say manager/supervisor/staff; fold those into the new positions.
+const roleKey=r=>(r==='manager'||r==='director')?'director':'npc';
+const RANK={npc:1,director:2};
+const myRole=()=>roleKey(S.me?.role);
+const atLeast=r=>RANK[myRole()]>=RANK[r];
+const isAdmin=()=>myRole()==='director'||!!S.me?.owner; // Directors manage; Boss (owner) is god mode
+const canRestore=()=>isAdmin();                         // put items back: Director and Boss only
+const activeManagers=()=>S.staff.filter(s=>roleKey(s.role)==='director'&&s.active!==false);
 const liveItems=()=>S.items.filter(i=>i.status==='active'||i.status==='reduced');
 const errText=e=>e?.code==='permission-denied'?'Your position doesn\'t allow that.':e?.code==='unavailable'||e?.code==='auth/network-request-failed'?'No connection. Try again when online.':'Something went wrong. Try again.';
 
@@ -149,7 +153,7 @@ function startData(){
   listen(collection(fs,'feedback'),'feedback',s=>{S.feedback=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.at||0)-(a.at||0))});
 }
 function resolveMe(){
-  if(S.owner){S.me={id:'admin',name:'Admin',role:'manager',owner:true};return}
+  if(S.owner){S.me={id:'admin',name:'Boss',role:'director',owner:true};return}
   const st=S.member&&S.staff.find(x=>x.id===S.member.staffId);
   S.me=st&&st.active!==false?{...st,role:S.member.role}:null;
 }
@@ -190,10 +194,10 @@ function render(){
   if(!S.settings){top.hidden=true;app.innerHTML=S.owner?setupView():`<section class="view">${brand()}<div class="empty">The app hasn't been set up for this store yet. Ask your manager.</div><div><button class="btn" data-signout="1">Sign out</button></div></section>`;restore(keep,focused);return}
   if(!S.loaded.staff||!S.loaded.items||!S.loaded.sections||!S.me){app.innerHTML=`<section class="view">${brand()}<div class="empty">Loading the store's list…</div></section>`;return}
   top.hidden=false;
-  const tabs=Object.keys(TABS).filter(t=>!(S.me.owner&&t==='log')&&!(t==='activity'&&!S.me.owner));
+  const tabs=Object.keys(TABS).filter(t=>!(t==='activity'&&!isAdmin()));
   if(!tabs.includes(S.tab))S.tab='today';
   $('#tabs').innerHTML=tabs.map(t=>`<button role="tab" data-tab="${t}" aria-selected="${t===S.tab}">${TABS[t]}</button>`).join('');
-  $('#whoName').textContent=S.me.name+' · '+ROLES[S.me.role||'staff'];updateThemeBtn();updatePhotoBtn();
+  $('#whoName').textContent=S.me.owner?'Boss':S.me.name+' · '+ROLES[myRole()];updateThemeBtn();updatePhotoBtn();
   $('#storeName').textContent=S.settings.store||'';
   app.innerHTML={today:todayView,log:logView,all:allView,activity:activityView,staff:staffView}[S.tab]();
   restore(keep,focused);
@@ -257,7 +261,7 @@ function itemPhoto(it){
       ?`<a class="thumb" href="${esc(src)}" target="_blank" rel="noopener"><img src="${esc(src)}" alt="photo" loading="lazy"></a>`
       :`<a class="plink" href="${esc(src)}" target="_blank" rel="noopener">Photo</a>`;
   }
-  if(S.me&&!S.me.owner) return `<button type="button" class="btn small ghost photo-add" data-addphoto="${esc(key)}">+ Photo</button>`;
+  if(S.me) return `<button type="button" class="btn small ghost photo-add" data-addphoto="${esc(key)}">+ Photo</button>`;
   return '';
 }
 // Camera / file photo, shrunk on the device and stored in Firestore (no Firebase Storage needed).
@@ -269,7 +273,7 @@ function pickPhoto(key){
 }
 function onPhotoPicked(e){
   const f=e.target.files&&e.target.files[0];e.target.value='';const key=S.photoTarget;
-  if(!f||!key||S.me.owner)return;flash('Processing photo…');
+  if(!f||!key)return;flash('Processing photo…');
   const img=new Image();const url=URL.createObjectURL(f);
   img.onerror=()=>{URL.revokeObjectURL(url);flash('Could not read that photo');};
   img.onload=()=>{URL.revokeObjectURL(url);
@@ -279,18 +283,18 @@ function onPhotoPicked(e){
     if(data.length>380000){try{data=cv.toDataURL('image/jpeg',0.4);}catch(e){}}
     if(data.length>380000){flash('Photo too large, try a plainer shot');return;}
     S.photos[key]=data;const b=by();
-    quickWrite(setDoc(doc(fs,'photos',key),{data,byName:b.byName||'Owner',at:b.at}),'Photo added');
+    quickWrite(setDoc(doc(fs,'photos',key),{data,byName:b.byName||'Boss',at:b.at}),'Photo added');
     render();
   };
   img.src=url;
 }
 function qtyControl(it,live){
-  if(!live||S.me.owner)return it.qty?`<span class="note">× ${esc(it.qty)}</span>`:'';
+  if(!live)return it.qty?`<span class="note">× ${esc(it.qty)}</span>`:'';
   return `<span class="qtywrap"><button type="button" class="qbtn" data-qtyminus="${it.id}" aria-label="Decrease count">&minus;</button><span class="qnum" data-qty="${it.id}">× ${esc(it.qty||0)}</span><button type="button" class="qbtn" data-qtyplus="${it.id}" aria-label="Increase count">+</button></span>`;
 }
 function itemCard(it){
   const n=daysLeft(it.expiry);const [y,m,d]=it.expiry.split('-');const live=it.status==='active'||it.status==='reduced';
-  const b=live?band(n):'';const acts=!S.me.owner;
+  const b=live?band(n):'';const acts=true;
   return `<div class="item">
     <div class="datebox ${b==='ok'?'':b}"><div class="d">${+d}</div><div class="m">${MON[+m-1]} ${y.slice(2)}</div></div>
     <div class="name">${esc(it.product)} ${qtyControl(it,live)}</div>
@@ -305,8 +309,8 @@ function itemCard(it){
       <button class="btn small" data-act="sold" data-id="${it.id}">Sold through</button>
       <button class="btn small ghost" data-act="void" data-id="${it.id}">Delete entry</button>`:
       (it.status==='void'
-        ? (atLeast('supervisor')?`<button class="btn small" data-act="restored" data-id="${it.id}">Undo delete</button>`:'')
-        : (atLeast('supervisor')?`<button class="btn small" data-act="restored" data-id="${it.id}">Undo, put back on shelf</button>`:''))}</div>`:''}
+        ? (canRestore()?`<button class="btn small" data-act="restored" data-id="${it.id}">Undo delete</button>`:'')
+        : (canRestore()?`<button class="btn small" data-act="restored" data-id="${it.id}">Undo, put back on shelf</button>`:''))}</div>`:''}
   </div>`;
 }
 function roundPanel(round,active){
@@ -326,7 +330,7 @@ function roundPanel(round,active){
       <span class="tick" aria-hidden="true">${c?'&#10003;':''}</span>
       <div class="check-body"><b>${esc(s.name)}</b>
         <div class="note">${c?`Checked by ${esc(c.byName)} at ${clock(c.at)}${c.note?` · ${esc(c.note)}`:''}`:late?`Not checked, was due by ${esc(dueBy(round))}`:'Not checked yet'}</div>
-        ${!c&&!S.me.owner?`<div class="actions" style="padding-top:6px">
+        ${!c?`<div class="actions" style="padding-top:6px">
           <input id="cn_${s.id}" placeholder="Note (optional), e.g. 2 pulled" maxlength="80" class="note-in">
           <button class="btn small primary" data-check="${s.id}">Checked</button></div>`:''}
       </div></div>`).join('')}</div></div>
@@ -336,18 +340,19 @@ function todayView(){
   const live=liveItems().sort((a,b)=>a.expiry.localeCompare(b.expiry));
   const exp=live.filter(i=>daysLeft(i.expiry)<0),soon=live.filter(i=>{const n=daysLeft(i.expiry);return n>=0&&n<=2}),week=live.filter(i=>{const n=daysLeft(i.expiry);return n>2&&n<=7});
   const round=currentRound();const hasSections=activeSections().length>0;
-  const block=(t,arr,msg)=>`<div class="list"><h3>${t} (${arr.length})</h3>${arr.length?arr.map(itemCard).join(''):`<div class="empty">${msg}</div>`}</div>`;
+  const block=(t,arr)=>`<div class="list"><h3>${t} (${arr.length})</h3>${arr.map(itemCard).join('')}</div>`;
+  const blocks=[['Expired, pull from shelf',exp],['Expiring in the next 2 days',soon],['Expiring this week',week]].filter(x=>x[1].length);
+  const checks=hasSections?roundPanel(round,true)+(round==='evening'?roundPanel('morning',false):'')
+    :(isAdmin()?`<div class="empty">Add the sections you check (Dairy chiller, Bakery and so on) in the <b>Staff</b> tab, so everyone can tick them off each morning and evening.</div>`:'');
   return `<section class="view">
-    ${hasSections?roundPanel(round,true)+(round==='evening'?roundPanel('morning',false):'')
-      :(isAdmin()?`<div class="empty">Add the sections you check (Dairy chiller, Bakery and so on) in the <b>Staff</b> tab, so everyone can tick them off each morning and evening.</div>`:'')}
     <div class="counts">
       <div class="count crit"><span class="n">${exp.length}</span><span class="l">Expired, pull now</span></div>
       <div class="count crit" style="opacity:.85"><span class="n">${soon.length}</span><span class="l">0–2 days</span></div>
       <div class="count warn"><span class="n">${week.length}</span><span class="l">3–7 days</span></div>
     </div>
-    ${live.length===0?`<div class="empty">Nothing logged yet. Go to <b>Log product</b> and add the first item you check, with its batch code and use-by date.</div>`:''}
-    ${(()=>{const blocks=[['Expired, pull from shelf',exp,'Nothing past its date.'],['Expiring in the next 2 days',soon,'Nothing due in the next 2 days.'],['Expiring this week',week,'Nothing else due this week.']];
-      return [...blocks.filter(x=>x[1].length),...blocks.filter(x=>!x[1].length)].map(x=>block(x[0],x[1],x[2])).join('');})()}
+    ${live.length===0?`<div class="empty">Nothing logged yet. Go to <b>Log product</b> and add the first item you check, with its batch code and use-by date.</div>`
+      :blocks.length?blocks.map(x=>block(x[0],x[1])).join(''):`<div class="okbox">Nothing due in the next 7 days. Nice.</div>`}
+    ${checks}
   </section>`;
 }
 function logView(){
@@ -366,8 +371,10 @@ function logView(){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <input id="scan_in" autocomplete="off" placeholder="Scanner input, or type a barcode" aria-label="Barcode" style="flex:1 1 220px">
       <button type="button" class="btn primary" data-camera="1">${S.camOn?'Stop camera':'Scan with camera'}</button>
+      ${S.camOn?`<button type="button" class="btn" data-torch="1">${torchOn?'Torch off':'Torch'}</button>`:''}
     </div>
     <div id="camBox" ${S.camOn?'':'hidden'}></div>
+    ${S.camOn?`<div class="note">Hold the barcode 10–15&nbsp;cm away and steady. Tap Torch if the light is low.</div>`:''}
     ${sc?(sc.ok?`<div class="readout">
       ${sc.gtin?`<span><b>Product no.</b>${esc(sc.gtin)}</span>`:''}${sc.batch?`<span><b>Batch</b>${esc(sc.batch)}</span>`:''}
       ${sc.expiry?`<span><b>${sc.expiryKind}</b>${esc(sc.expiry)}</span>`:''}${sc.produced?`<span><b>Packed</b>${esc(sc.produced)}</span>`:''}
@@ -430,22 +437,24 @@ function allView(){
     const oa=order.has(a)?order.get(a):(a?1000:2000),ob=order.has(b)?order.get(b):(b?1000:2000);
     return oa-ob||a.localeCompare(b);
   });
-  const body=arr.length?keys.map(k=>{
+  const label=k=>k?esc(k):'No section';
+  const nav=keys.length>1?`<div class="secnav" role="tablist">${keys.map((k,i)=>`<button type="button" class="secnav-item" data-gonav="${i}">${label(k)} <span class="cnt">${groups.get(k).length}</span></button>`).join('')}</div>`:'';
+  const body=arr.length?`<div class="secbody">${keys.map((k,i)=>{
     const items=groups.get(k).slice().sort((a,b)=>a.expiry.localeCompare(b.expiry));
-    return `<div class="list"><h3>${k?esc(k):'No section'} (${items.length})</h3>${items.map(itemCard).join('')}</div>`;
-  }).join(''):'<div class="empty">No items match.</div>';
+    return `<details class="grp" id="grp-${i}" open><summary><span>${label(k)}</span> <span class="cnt">${items.length}</span></summary><div class="list">${items.map(itemCard).join('')}</div></details>`;
+  }).join('')}</div>`:'<div class="empty">No items match.</div>';
   return `<section class="view"><h2>All items</h2>
     <div class="filters"><input id="f_q" type="search" placeholder="Search product, batch, barcode, section or name" value="${esc(S.filter.q)}">
     <select id="f_status">${[['active','On shelf'],['removed','Removed'],['sold','Sold through'],['void','Deleted'],['all','Everything']].map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <div class="note">${arr.length} item${arr.length===1?'':'s'}</div>
-    ${body}</section>`;
+    <div class="allwrap">${nav}${body}</div></section>`;
 }
 function activityView(){
-  if(!S.me.owner)return `<section class="view"><h2>Activity</h2><div class="empty">The activity log is for the owner.</div></section>`;
+  if(!isAdmin())return `<section class="view"><h2>Activity</h2><div class="empty">The activity log is for Directors and the Boss.</div></section>`;
   const ev=[];
   for(const it of S.items)for(const h of (it.history||[]))if(h.byName){
-    const canRestore=['removed','sold','void'].includes(h.action)&&it.status===h.action&&it.lastAt===h.at&&atLeast('supervisor')&&!S.me.owner;
-    ev.push({at:h.at,byName:h.byName,restoreId:canRestore?it.id:null,html:`${esc(ACTION[h.action]||h.action)} <b>${esc(it.product)}</b> <span class="batch">${esc(it.batch||'no batch')}</span>`});
+    const canRestoreNow=['removed','sold','void'].includes(h.action)&&it.status===h.action&&it.lastAt===h.at&&canRestore();
+    ev.push({at:h.at,byName:h.byName,restoreId:canRestoreNow?it.id:null,html:`${esc(ACTION[h.action]||h.action)} <b>${esc(it.product)}</b> <span class="batch">${esc(it.batch||'no batch')}</span>`});
   }
   for(const s of S.sections)for(const h of (s.history||[]))if(h.byName)ev.push({at:h.at,byName:h.byName,html:`checked <b>${esc(s.name)}</b> <span class="note">${new Date(h.at).getHours()<SPLIT_HOUR?'morning':'evening'}${h.note?`, ${esc(h.note)}`:''}</span>`});
   ev.sort((a,b)=>b.at-a.at);
@@ -466,27 +475,26 @@ function feedbackPanel(){
     <form id="feedbackForm" autocomplete="off" style="display:grid;gap:8px">
       <textarea id="fb_msg" rows="3" maxlength="1000" required placeholder="What would make this better?"></textarea>
       <div id="fbErr"></div>
-      <div class="actions"><button class="btn primary">Send</button>
-      ${FEEDBACK_EMAIL?`<button type="button" class="btn small" id="fbMail">Email instead</button>`:''}</div>
+      <div class="actions"><button class="btn primary">Send</button></div>
     </form></div>`;
 }
 function feedbackList(){
   if(!S.me.owner||!S.feedback.length)return '';
-  return `<div class="panel"><h3>Suggestions (${S.feedback.length})</h3><div class="log">${S.feedback.slice(0,40).map(f=>`<div class="row"><span class="t">${fmtTime(f.at)}</span><span><b>${esc(f.byName||'Someone')}</b>${f.role?` <span class="note">(${esc(ROLES[f.role]||f.role)})</span>`:''} ${esc(f.message)} <button class="btn small" data-fbdel="${f.id}">Dismiss</button></span></div>`).join('')}</div></div>`;
+  return `<div class="panel"><h3>Suggestions (${S.feedback.length})</h3><div class="log">${S.feedback.slice(0,40).map(f=>`<div class="row"><span class="t">${fmtTime(f.at)}</span><span><b>${esc(f.byName||'Someone')}</b>${f.role?` <span class="note">(${esc(ROLES[roleKey(f.role)]||f.role)})</span>`:''} ${esc(f.message)} <button class="btn small" data-fbdel="${f.id}">Dismiss</button></span></div>`).join('')}</div></div>`;
 }
 function staffView(){
   // Floor staff and supervisors only manage their own PIN.
   if(!isAdmin())return `<section class="view"><h2>My account</h2>
-    <div class="panel" style="gap:4px"><b>${esc(S.me.name)}</b><div class="note">@${esc(S.me.username)} · ${ROLES[S.me.role]}</div></div>
+    <div class="panel" style="gap:4px"><b>${esc(S.me.name)}</b><div class="note">@${esc(S.me.username)} · ${ROLES[myRole()]}</div></div>
     ${feedbackPanel()}
     ${myPinForm()}</section>`;
-  const list=[...S.staff].sort((a,b)=>(a.active===false)-(b.active===false)||RANK[b.role||'staff']-RANK[a.role||'staff']||a.name.localeCompare(b.name));
+  const list=[...S.staff].sort((a,b)=>(a.active===false)-(b.active===false)||RANK[roleKey(b.role)]-RANK[roleKey(a.role)]||a.name.localeCompare(b.name));
   const card=s=>{
-    const role=s.role||'staff';const open=S.editStaff===s.id;const lastMgr=role==='manager'&&s.active!==false&&activeManagers().length<=1;
+    const role=roleKey(s.role);const open=S.editStaff===s.id;const lastMgr=role==='director'&&s.active!==false&&activeManagers().length<=1;
     return `<div class="panel" style="padding:12px 14px;gap:10px">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <b>${esc(s.name)}</b><span class="note">@${esc(s.username)}</span>${s.id===S.me.id?' <span class="note">(you)</span>':''}
-      <span class="pill ${role==='manager'?'ok':role==='supervisor'?'warn':'done'}">${ROLES[role]}</span>
+      <span class="pill ${role==='director'?'ok':'done'}">${ROLES[role]}</span>
       ${s.active===false?'<span class="pill crit">Inactive</span>':''}
       <button class="btn small" style="margin-left:auto" data-staff-edit="${s.id}">${open?'Close':'Manage'}</button>
     </div>
@@ -495,7 +503,7 @@ function staffView(){
         <label>Position<select id="role_${s.id}" ${lastMgr?'disabled':''}>${Object.entries(ROLES).map(([v,l])=>`<option value="${v}" ${v===role?'selected':''}>${l}</option>`).join('')}</select></label>
         <label>New PIN (blank to keep)<input id="rpin_${s.id}" type="password" class="pin" inputmode="numeric" maxlength="6" autocomplete="new-password"></label>
       </div>
-      ${lastMgr?`<div class="note">${esc(s.name)} is the only manager, so their position can't change until someone else is made manager.</div>`:''}
+      ${lastMgr?`<div class="note">${esc(s.name)} is the only Director, so their position can't change until someone else is made a Director.</div>`:''}
       <div class="actions">
         <button class="btn small primary" data-staff-save="${s.id}">Save changes</button>
         ${s.id!==S.me.id&&!lastMgr?`<button class="btn small ${s.active===false?'':'danger'}" data-staff-toggle="${s.id}">${s.active===false?'Reactivate':'Deactivate'}</button>`:''}
@@ -506,10 +514,10 @@ function staffView(){
   const secs=activeSections();
   return `<section class="view"><h2>Staff</h2>
   <div class="panel" style="gap:6px"><h3>What each position can do</h3>
-    <div class="note"><b>Floor staff:</b> do the morning and evening checks, log products, remove from shelf, mark sold through.</div>
-    <div class="note"><b>Supervisor:</b> all of that, plus undo a removal or sale made by mistake.</div>
-    <div class="note"><b>Manager:</b> all of that, plus this Staff page: add people, change positions, reset PINs, deactivate staff, and set up sections and check times.</div>
-    <div class="note">Floor staff and supervisors only see "Change my PIN" here.</div></div>
+    <div class="note"><b>NPC:</b> morning and evening checks, log products, remove from shelf, mark sold through, delete a mistaken entry, change their own PIN.</div>
+    <div class="note"><b>Director:</b> everything an NPC can, plus put items back on the shelf, see the activity log, and this Staff page: add people, change positions, reset PINs, deactivate staff, reorder sections and set check times.</div>
+    <div class="note"><b>Boss:</b> full access to everything, including the suggestions inbox.</div>
+    <div class="note">NPCs only see "Change my PIN" here.</div></div>
   <div class="list">${list.map(card).join('')}</div>
   <form class="panel" id="staffForm" autocomplete="off"><h3>Add a team member</h3>
     <div class="grid2"><label>Name<input id="sf_name" required maxlength="40" placeholder="e.g. Anna K"></label>
@@ -525,8 +533,8 @@ function staffView(){
     <label>Evening check due by<input id="st_evening" type="time" value="${esc(dueBy('evening'))}" required></label></div>
     <button class="btn">Save times</button></form>
   <div class="panel"><h3>Sections</h3>
-    <p class="note">Every section is ticked off in both the morning and evening check. Anyone can also add a new section while logging a product, by choosing "Other" for the section.</p>
-    ${secs.length?`<div class="seclist">${secs.map(s=>`<div class="secrow"><input id="sn_${s.id}" value="${esc(s.name)}" maxlength="40" aria-label="Section name">
+    <p class="note">Every section is ticked off in both the morning and evening check. Use the ▲▼ arrows to set the order staff see them in. Anyone can also add a new section while logging a product, by choosing "Other" for the section.</p>
+    ${secs.length?`<div class="seclist">${secs.map((s,i)=>`<div class="secrow"><span class="secmove"><button class="btn small ghost" data-sec-up="${s.id}" ${i===0?'disabled':''} aria-label="Move up">▲</button><button class="btn small ghost" data-sec-down="${s.id}" ${i===secs.length-1?'disabled':''} aria-label="Move down">▼</button></span><input id="sn_${s.id}" value="${esc(s.name)}" maxlength="40" aria-label="Section name">
       <button class="btn small" data-sec-save="${s.id}">Rename</button><button class="btn small danger" data-sec-archive="${s.id}">Remove</button></div>`).join('')}</div>`:'<div class="note">No sections yet.</div>'}
     <form id="sectionForm" class="secrow"><input id="sec_name" required maxlength="40" placeholder="New section, e.g. Dairy chiller" aria-label="New section name"><button class="btn small primary">Add section</button></form>
   </div>
@@ -538,16 +546,29 @@ function staffView(){
 
 /* ---------- camera scanning ---------- */
 let cam=null;
+let torchOn=false;
 async function startCamera(){
   if(!window.Html5Qrcode){flash('Camera scanner didn\'t load. Check the connection.');return}
-  S.camOn=true;render();
+  S.camOn=true;torchOn=false;render();
   const F=Html5QrcodeSupportedFormats;
   cam=new Html5Qrcode('camBox',{formatsToSupport:[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.DATA_MATRIX,F.QR_CODE,F.ITF],useBarCodeDetectorIfSupported:true,verbose:false});
-  try{await cam.start({facingMode:'environment'},{fps:12,qrbox:(w,h)=>({width:Math.min(300,w*0.85),height:Math.min(180,h*0.5)})},
-      text=>{stopCamera();if(navigator.vibrate)navigator.vibrate(60);applyScan(text)},()=>{})}
-  catch(e){S.camOn=false;cam=null;render();flash('Camera blocked. Allow camera access for this site in the browser settings.')}
+  const onHit=text=>{stopCamera();if(navigator.vibrate)navigator.vibrate(60);applyScan(text)};
+  // Tighter box and a higher-resolution stream so the barcode is readable before the lens finishes focusing.
+  const cfg={fps:15,qrbox:(w,h)=>({width:Math.min(320,Math.round(w*0.9)),height:Math.min(210,Math.round(h*0.55))})};
+  const hi={facingMode:'environment',width:{ideal:1920},height:{ideal:1080},advanced:[{focusMode:'continuous'}]};
+  try{await cam.start(hi,cfg,onHit,()=>{})}
+  catch(e){
+    try{await cam.start({facingMode:'environment'},cfg,onHit,()=>{})}
+    catch(e2){S.camOn=false;cam=null;render();flash('Camera blocked. Allow camera access for this site in the browser settings.')}
+  }
 }
-async function stopCamera(){const c=cam;cam=null;S.camOn=false;if(c){try{await c.stop()}catch(e){}try{c.clear()}catch(e){}}render()}
+// Torch helps a lot on iPhones, where the browser gives little focus control. No-op where unsupported.
+async function toggleTorch(){
+  if(!cam)return;torchOn=!torchOn;
+  try{await cam.applyVideoConstraints({advanced:[{torch:torchOn}]});render();}
+  catch(e){torchOn=false;flash('This phone doesn\'t allow the torch from the browser');}
+}
+async function stopCamera(){const c=cam;cam=null;S.camOn=false;torchOn=false;if(c){try{await c.stop()}catch(e){}try{c.clear()}catch(e){}}render()}
 
 /* ---------- product name lookup (Open Food Facts, free and open) ---------- */
 async function offFetch(gtin){
@@ -599,7 +620,7 @@ function scheduleNameSearch(q){
 
 /* ---------- scanning ---------- */
 function applyScan(raw){
-  if(!raw||!raw.trim()||S.me?.owner)return;
+  if(!raw||!raw.trim())return;
   const sc=parseScan(raw);S.scan=sc;S.tab='log';
   const known=sc.gtin&&S.products[sc.gtin];
   S.lines=[{expiry:sc.expiry||'',qty:sc.qty||''}];
@@ -641,11 +662,11 @@ function checkDup(){
 // Everyday writes save on the device immediately and sync later, so they never wait on the network.
 function quickWrite(p,ok){if(ok)flash(navigator.onLine?ok:ok+' (will sync when back online)');p.catch(e=>flash('Not saved: '+errText(e)))}
 // Admin actions are logged without a name, so nothing in the app reveals the admin login.
-const by=()=>S.me.owner?{by:'admin',byName:'',at:Date.now()}:{by:S.me.id,byName:S.me.name,at:Date.now()};
+const by=()=>S.me.owner?{by:'admin',byName:'Boss',at:Date.now()}:{by:S.me.id,byName:S.me.name,at:Date.now()};
 const UNDOABLE=['removed','sold','void'];
 function setItemStatus(id,act){
-  const it=S.items.find(i=>i.id===id);if(!it||S.me.owner)return;
-  if(act==='restored'&&!atLeast('supervisor')){flash('Ask a supervisor or manager to undo this');return}
+  const it=S.items.find(i=>i.id===id);if(!it)return;
+  if(act==='restored'&&!canRestore()){flash('Only a Director or the Boss can put items back');return}
   const prevStatus=it.status,prevHistory=(it.history||[]).slice();
   const status=act==='restored'?'active':act;const b=by();
   const history=[...(it.history||[]),{action:act,...b}].slice(-30);
@@ -661,7 +682,7 @@ function revertItem(id,status,history){
 // +/- shelf count beside an item. Taps are coalesced into one write after a short pause.
 const qtyTimers={},qtyPending={};
 function adjustQty(id,delta){
-  const it=S.items.find(i=>i.id===id);if(!it||S.me.owner)return;
+  const it=S.items.find(i=>i.id===id);if(!it)return;
   const base=qtyPending[id]!=null?qtyPending[id]:(Number(it.qty)||0);
   const next=Math.max(0,base+delta);qtyPending[id]=next;it.qty=next;
   const span=document.querySelector(`[data-qty="${id}"]`);if(span)span.textContent='× '+next;
@@ -670,13 +691,21 @@ function adjustQty(id,delta){
     quickWrite(updateDoc(doc(fs,'items',id),{qty:v,lastAction:'adjusted',lastBy:b.by,lastByName:b.byName,lastAt:b.at}),null);},700);
 }
 function checkSection(id){
-  const s=S.sections.find(x=>x.id===id);if(!s||S.me.owner)return;
+  const s=S.sections.find(x=>x.id===id);if(!s)return;
   const note=($('#cn_'+id)?.value||'').trim().slice(0,80);const b=by();
   const lastCheck={...b,note};
   quickWrite(updateDoc(doc(fs,'sections',id),{lastCheck,history:[...(s.history||[]),lastCheck].slice(-60)}),`${s.name} checked`);
   const r=roundState(currentRound());if(r.total&&r.done+1>=r.total&&!roundCheck(s,currentRound()))setTimeout(()=>flash(`${ROUND[currentRound()]} complete`),1200);
 }
 const logChange=(s,text)=>[...(s.changes||[]),{text,...by()}].slice(-20);
+// Reorder sections: renumber them 0..n in the new arrangement, writing only what moved.
+function moveSection(id,dir){
+  if(!isAdmin())return;
+  const secs=activeSections();const i=secs.findIndex(x=>x.id===id);if(i<0)return;const j=i+dir;if(j<0||j>=secs.length)return;
+  const arr=secs.slice();const [m]=arr.splice(i,1);arr.splice(j,0,m);
+  const b=writeBatch(fs);let changed=0;arr.forEach((x,idx)=>{if((x.order)!==idx){b.update(doc(fs,'sections',x.id),{order:idx});changed++}});
+  if(changed)quickWrite(b.commit(),'Sections reordered');
+}
 
 async function addStaff(){
   const name=$('#sf_name').value.trim(),username=$('#sf_user').value.trim().toLowerCase(),pin=$('#sf_pin').value,role=$('#sf_role').value;
@@ -702,9 +731,9 @@ async function saveStaff(id,btn){
   const s=S.staff.find(x=>x.id===id);if(!s)return;
   const newRole=$('#role_'+id).value,pin=$('#rpin_'+id).value.trim();const notes=[];
   const b=writeBatch(fs);const patch={};
-  if(newRole!==(s.role||'staff')){
-    if(s.role==='manager'&&activeManagers().length<=1){flash('Keep at least one active manager');return}
-    patch.role=newRole;notes.push(`Position changed from ${ROLES[s.role||'staff']} to ${ROLES[newRole]}`);
+  if(newRole!==roleKey(s.role)){
+    if(roleKey(s.role)==='director'&&activeManagers().length<=1){flash('Keep at least one active Director');return}
+    patch.role=newRole;notes.push(`Position changed from ${ROLES[roleKey(s.role)]} to ${ROLES[newRole]}`);
     if(s.active!==false)b.update(doc(fs,'members',s.authUid),{role:newRole});
   }
   if(pin){
@@ -727,7 +756,7 @@ async function saveStaff(id,btn){
 }
 async function toggleStaff(id){
   const s=S.staff.find(x=>x.id===id);if(!s||!isAdmin()||s.id===S.me.id)return;
-  if(s.active!==false&&s.role==='manager'&&activeManagers().length<=1){flash('Keep at least one active manager');return}
+  if(s.active!==false&&roleKey(s.role)==='director'&&activeManagers().length<=1){flash('Keep at least one active Director');return}
   const reactivate=s.active===false;const b=writeBatch(fs);
   if(reactivate)b.set(doc(fs,'members',s.authUid),{staffId:s.id,role:s.role,username:s.username});else b.delete(doc(fs,'members',s.authUid));
   b.update(doc(fs,'staff',id),{active:reactivate,changes:logChange(s,reactivate?'Reactivated':'Deactivated')});
@@ -743,12 +772,15 @@ document.addEventListener('click',e=>{
   const d=t.dataset;
   if(d.camera){cam?stopCamera():startCamera();return}
   if(d.usesug){const pe=$('#lf_product');if(pe)pe.value=d.usesug;if(d.img)S.nameImg[normName(d.usesug)]=d.img;const el=$('#nameSug');if(el)el.innerHTML='';checkDup();pe?.focus();return}
-  if(d.addphoto){if(!S.me.owner)pickPhoto(d.addphoto);return}
+  if(d.addphoto){pickPhoto(d.addphoto);return}
   if(d.signout||t.id==='signOutBtn'){if(cam)stopCamera();signOut(auth);return}
   if(t.id==='themeBtn'){cycleTheme();return}
   if(t.id==='photoBtn'){store.set('sdc_photos',photosOn()?null:'1');render();return}
-  if(t.id==='fbMail'){const m=$('#fb_msg')?.value||'';if(FEEDBACK_EMAIL)location.href=`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Shelf Date Check suggestion')}&body=${encodeURIComponent(m)}`;return}
   if(d.fbdel){if(S.me.owner)quickWrite(deleteDoc(doc(fs,'feedback',d.fbdel)),'Dismissed');return}
+  if(d.gonav!==undefined){const el=document.getElementById('grp-'+d.gonav);if(el){el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'})}return}
+  if(d.torch){toggleTorch();return}
+  if(d.secUp){moveSection(d.secUp,-1);return}
+  if(d.secDown){moveSection(d.secDown,1);return}
   if(d.restore){setItemStatus(d.restore,'restored');return}
   if(d.ownerClose){S.showOwner=false;render();return}
   if(d.recent){$('#li_user').value=d.recent;$('#li_pin').focus();return}
@@ -801,8 +833,8 @@ document.addEventListener('submit',async e=>{
     if(!PIN_RE.test(pin))return err('PIN must be 4 to 6 digits.');
     btn.disabled=true;
     try{const uid=await createLogin(username,1,pin);const sref=doc(collection(fs,'staff'));const now=Date.now();const b=writeBatch(fs);
-      b.set(sref,{name,username,role:'manager',active:true,authUid:uid,gen:1,createdAt:now,changes:[{text:'Added as Manager',by:'admin',byName:'',at:now}]});
-      b.set(doc(fs,'members',uid),{staffId:sref.id,role:'manager',username});
+      b.set(sref,{name,username,role:'director',active:true,authUid:uid,gen:1,createdAt:now,changes:[{text:'Added as Director',by:'admin',byName:'',at:now}]});
+      b.set(doc(fs,'members',uid),{staffId:sref.id,role:'director',username});
       b.set(doc(fs,'logins',username),{gen:1});
       b.set(doc(fs,'config','settings'),{store:store_,morningBy:'09:00',eveningBy:'20:00',createdAt:now});
       // Starting sections for the store (every one is checked both morning and evening).
