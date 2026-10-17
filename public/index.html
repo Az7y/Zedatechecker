@@ -159,24 +159,18 @@ details[open]>.round-sum::after{transform:rotate(-135deg)}
 .seclist{display:grid;gap:8px}
 .secrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.secrow input{flex:1 1 160px;min-width:0}
 .net{background:var(--warn-bg);color:var(--warn);font:600 12px var(--body);padding:3px 8px;border-radius:99px}
-/* All items: section list on the left, collapsible groups on the right */
-.allwrap{display:flex;gap:14px;align-items:flex-start}
-.secnav{flex:0 0 150px;position:sticky;top:96px;display:flex;flex-direction:column;gap:4px;max-height:calc(100vh - 120px);overflow:auto}
-.secnav-item{text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:9px 10px;font:600 13px var(--body);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:6px}
-.secnav-item .cnt{background:var(--sunk);color:var(--muted);border-radius:99px;padding:1px 7px;font-size:11px;flex:0 0 auto}
-.secbody{flex:1 1 auto;min-width:0;display:grid;gap:12px}
-details.grp{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-details.grp>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 12px;font:600 15px var(--body);background:var(--sunk)}
+/* All items: a jump-to-section dropdown over stacked, collapsible section groups */
+.jumpsec{display:grid;gap:4px}
+.jumpsec select{font-weight:600}
+.secbody{display:grid;gap:12px}
+details.grp{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;scroll-margin-top:96px}
+details.grp>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:12px 14px;font:600 15px var(--body);background:var(--sunk)}
 details.grp>summary::-webkit-details-marker{display:none}
 details.grp>summary .cnt{margin-left:auto;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:1px 8px;font-size:12px;color:var(--muted)}
 details.grp>.list{padding:10px 12px}
 .secmove{display:inline-flex;flex-direction:column;gap:2px;flex:0 0 auto}
 .secmove .btn.small{min-height:20px;padding:0 7px;font-size:11px;line-height:1.3}
-@media (max-width:620px){
-  .allwrap{flex-direction:column}
-  .secnav{flex:0 0 auto;position:static;flex-direction:row;overflow-x:auto;max-height:none;width:100%;padding-bottom:4px}
-  .secnav-item{white-space:nowrap}
-}
+.edititem{border:1px solid var(--accent)!important}
 </style>
 </head>
 <body>

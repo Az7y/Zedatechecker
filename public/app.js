@@ -28,7 +28,7 @@ async function createLogin(username, gen, pin){
 const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[],
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
-  editStaff:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
+  editStaff:null, editItem:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
   lines:[{expiry:'',qty:''}], offCache:{}, feedback:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null };
 
 /* GS1 barcode parsing. Handles plain EAN/UPC, and GS1-128 / DataMatrix / QR element strings
@@ -106,7 +106,7 @@ const pad=n=>String(n).padStart(2,'0');
 function fmtTime(ms){const d=new Date(ms);return `${pad(d.getDate())} ${MON[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`}
 const clock=ms=>{const d=new Date(ms);return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const STATUS={active:'On shelf',reduced:'On shelf',removed:'Removed',sold:'Sold through',void:'Deleted'};
-const ACTION={logged:'logged',reduced:'reduced',removed:'removed from shelf',sold:'marked sold through',restored:'put back on shelf',void:'deleted (mistake)',adjusted:'changed the count'};
+const ACTION={logged:'logged',reduced:'reduced',removed:'removed from shelf',sold:'marked sold through',restored:'put back on shelf',void:'deleted (mistake)',edited:'edited the details',adjusted:'changed the count'};
 const ROLES={director:'Director',npc:'NPC'};
 // Legacy data may still say manager/supervisor/staff; fold those into the new positions.
 const roleKey=r=>(r==='manager'||r==='director')?'director':'npc';
@@ -307,11 +307,31 @@ function itemCard(it){
     ${acts?`<div class="actions" style="grid-column:1/-1">${live?`
       <button class="btn small danger" data-act="removed" data-id="${it.id}">Remove from shelf</button>
       <button class="btn small" data-act="sold" data-id="${it.id}">Sold through</button>
-      <button class="btn small ghost" data-act="void" data-id="${it.id}">Delete entry</button>`:
+      <button class="btn small ghost" data-act="void" data-id="${it.id}">Delete entry</button>
+      ${isAdmin()?`<button class="btn small" data-edititem="${it.id}">${S.editItem===it.id?'Close':'Edit'}</button>`:''}`:
       (it.status==='void'
         ? (canRestore()?`<button class="btn small" data-act="restored" data-id="${it.id}">Undo delete</button>`:'')
         : (canRestore()?`<button class="btn small" data-act="restored" data-id="${it.id}">Undo, put back on shelf</button>`:''))}</div>`:''}
+    ${live&&isAdmin()&&S.editItem===it.id?editItemForm(it):''}
   </div>`;
+}
+// Directors and the Boss can fix a logged entry: name, section (for items logged with none), date, qty.
+function editItemForm(it){
+  const secs=activeSections();const known=secs.some(x=>x.name===it.location);
+  return `<form class="panel edititem" id="editItemForm" data-editsave="${it.id}" style="grid-column:1/-1;gap:10px;margin-top:4px">
+    <label>Product<input id="ei_prod_${it.id}" value="${esc(it.product)}" maxlength="80" required></label>
+    <div class="grid2">
+      <label>Section<select id="ei_loc_${it.id}" required>
+        <option value="">— choose —</option>
+        ${secs.map(x=>`<option ${x.name===it.location?'selected':''}>${esc(x.name)}</option>`).join('')}
+        ${it.location&&!known?`<option selected>${esc(it.location)}</option>`:''}
+      </select></label>
+      <label>Use-by<input id="ei_exp_${it.id}" type="date" value="${esc(it.expiry)}" min="2020-01-01" required></label>
+      <label>Qty<input id="ei_qty_${it.id}" type="number" min="1" max="9999" value="${esc(it.qty||'')}" required></label>
+    </div>
+    <div class="actions"><button class="btn small primary">Save changes</button>
+      <button type="button" class="btn small ghost" data-editcancel="1">Cancel</button></div>
+  </form>`;
 }
 function roundPanel(round,active){
   const r=roundState(round);const late=pastDue(round);
@@ -391,15 +411,12 @@ function logView(){
     <label>Product<input id="lf_product" required maxlength="80" list="prodlist" placeholder="Brand Product name, e.g. Avonmore Fresh Milk 2L"></label>
     <datalist id="prodlist">${prods.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
     <div id="nameSug" class="namesug"></div>
-    <div class="grid2">
-      <label>Batch / lot code (optional)<input id="lf_batch" class="mono" maxlength="40" placeholder="L2731"></label>
-      <label>Section<select id="lf_loc">
-        <option value="">— choose —</option>
-        ${secs.map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('')}
-        ${otherLocs.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('')}
-        <option value="__other__">Other (type a new one)…</option>
-      </select></label>
-    </div>
+    <label>Section<select id="lf_loc" required>
+      <option value="">— choose —</option>
+      ${secs.map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('')}
+      ${otherLocs.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('')}
+      <option value="__other__">Other (type a new one)…</option>
+    </select></label>
     <div id="locOtherWrap" hidden><label>New section<input id="lf_loc_other" maxlength="40" placeholder="e.g. Chilled meats"></label></div>
     <div class="datelines">
       <div class="dl-head"><span>Use-by / best-before</span><span>Qty</span><span></span></div>
@@ -438,7 +455,7 @@ function allView(){
     return oa-ob||a.localeCompare(b);
   });
   const label=k=>k?esc(k):'No section';
-  const nav=keys.length>1?`<div class="secnav" role="tablist">${keys.map((k,i)=>`<button type="button" class="secnav-item" data-gonav="${i}">${label(k)} <span class="cnt">${groups.get(k).length}</span></button>`).join('')}</div>`:'';
+  const nav=keys.length>1?`<label class="jumpsec"><span>Jump to section</span><select id="secjump"><option value="">All sections</option>${keys.map((k,i)=>`<option value="${i}">${label(k)} (${groups.get(k).length})</option>`).join('')}</select></label>`:'';
   const body=arr.length?`<div class="secbody">${keys.map((k,i)=>{
     const items=groups.get(k).slice().sort((a,b)=>a.expiry.localeCompare(b.expiry));
     return `<details class="grp" id="grp-${i}" open><summary><span>${label(k)}</span> <span class="cnt">${items.length}</span></summary><div class="list">${items.map(itemCard).join('')}</div></details>`;
@@ -447,7 +464,8 @@ function allView(){
     <div class="filters"><input id="f_q" type="search" placeholder="Search product, batch, barcode, section or name" value="${esc(S.filter.q)}">
     <select id="f_status">${[['active','On shelf'],['removed','Removed'],['sold','Sold through'],['void','Deleted'],['all','Everything']].map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <div class="note">${arr.length} item${arr.length===1?'':'s'}</div>
-    <div class="allwrap">${nav}${body}</div></section>`;
+    ${nav}
+    ${body}</section>`;
 }
 function activityView(){
   if(!isAdmin())return `<section class="view"><h2>Activity</h2><div class="empty">The activity log is for Directors and the Boss.</div></section>`;
@@ -627,7 +645,7 @@ function applyScan(raw){
   render();
   if(!sc.ok){$('#scan_in')?.focus();return}
   const set=(id,v)=>{const el=$('#'+id);if(el&&v!=null&&v!=='')el.value=v};
-  set('lf_gtin',sc.gtin);set('lf_batch',sc.batch);
+  set('lf_gtin',sc.gtin);
   if(known){set('lf_product',known.name);sc.image=known.image||null;}
   if(sc.gtin&&!known&&(window.__offStub||navigator.onLine)){
     sc.lookup='busy';render();
@@ -652,10 +670,10 @@ document.addEventListener('keydown',e=>{
   if(e.key.length===1)kb.buf+=e.key;
 });
 function checkDup(){
-  const pe=$('#lf_product'),be=$('#lf_batch'),dw=$('#dupWarn');if(!pe||!be||!dw)return;
-  const p=pe.value.trim().toLowerCase(),b=be.value.trim().toUpperCase();
-  const dup=p&&b&&liveItems().find(i=>i.product.toLowerCase()===p&&(i.batch||'')===b);
-  dw.innerHTML=dup?`<div class="warnbox">This batch is already on the list, logged by ${esc(dup.loggedByName)} on ${fmtTime(dup.loggedAt)}, use-by ${esc(dup.expiry)}. Save anyway only if it's separate stock.</div>`:'';
+  const pe=$('#lf_product'),dw=$('#dupWarn');if(!pe||!dw)return;
+  const p=pe.value.trim().toLowerCase();
+  const dups=p?liveItems().filter(i=>i.product.toLowerCase()===p):[];
+  dw.innerHTML=dups.length?`<div class="warnbox">${esc(pe.value.trim())} is already on the list (${dups.map(i=>'use-by '+esc(i.expiry)).join(', ')}). Add again only if it's separate stock.</div>`:'';
 }
 
 /* ---------- writes ---------- */
@@ -664,6 +682,18 @@ function quickWrite(p,ok){if(ok)flash(navigator.onLine?ok:ok+' (will sync when b
 // Admin actions are logged without a name, so nothing in the app reveals the admin login.
 const by=()=>S.me.owner?{by:'admin',byName:'Boss',at:Date.now()}:{by:S.me.id,byName:S.me.name,at:Date.now()};
 const UNDOABLE=['removed','sold','void'];
+function saveItemEdit(id){
+  if(!isAdmin())return;const it=S.items.find(i=>i.id===id);if(!it)return;
+  const product=$('#ei_prod_'+id).value.trim();const location=$('#ei_loc_'+id).value;
+  const expiry=$('#ei_exp_'+id).value;const qv=$('#ei_qty_'+id).value;
+  if(!product){flash('Add a product name');return}
+  if(!location){flash('Choose a section');return}
+  if(!expiry){flash('Add a use-by date');return}
+  if(!qv||Number(qv)<1){flash('Add a quantity');return}
+  const b=by();
+  quickWrite(updateDoc(doc(fs,'items',id),{product,location,expiry,qty:Number(qv),lastAction:'edited',lastBy:b.by,lastByName:b.byName,lastAt:b.at,history:[...(it.history||[]),{action:'edited',...b}].slice(-30)}),`${product} updated`);
+  S.editItem=null;render();
+}
 function setItemStatus(id,act){
   const it=S.items.find(i=>i.id===id);if(!it)return;
   if(act==='restored'&&!canRestore()){flash('Only a Director or the Boss can put items back');return}
@@ -777,7 +807,8 @@ document.addEventListener('click',e=>{
   if(t.id==='themeBtn'){cycleTheme();return}
   if(t.id==='photoBtn'){store.set('sdc_photos',photosOn()?null:'1');render();return}
   if(d.fbdel){if(S.me.owner)quickWrite(deleteDoc(doc(fs,'feedback',d.fbdel)),'Dismissed');return}
-  if(d.gonav!==undefined){const el=document.getElementById('grp-'+d.gonav);if(el){el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'})}return}
+  if(d.edititem){S.editItem=S.editItem===d.edititem?null:d.edititem;render();return}
+  if(d.editcancel){S.editItem=null;render();return}
   if(d.torch){toggleTorch();return}
   if(d.secUp){moveSection(d.secUp,-1);return}
   if(d.secDown){moveSection(d.secDown,1);return}
@@ -800,12 +831,13 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('input',e=>{
   if(e.target.id==='f_q'){S.filter.q=e.target.value;render()}
-  if(e.target.id==='lf_product'||e.target.id==='lf_batch')checkDup();
+  if(e.target.id==='lf_product')checkDup();
   if(e.target.id==='lf_product')scheduleNameSearch(e.target.value);
   if(e.target.classList&&(e.target.classList.contains('dl-exp')||e.target.classList.contains('dl-qty')))S.lines=readLines();
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='f_status'){S.filter.status=e.target.value;render()}
+  if(e.target.id==='secjump'){const v=e.target.value;if(v!==''){const el=document.getElementById('grp-'+v);if(el){el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'})}}return}
   if(e.target.id==='lf_loc'){const w=$('#locOtherWrap');if(w){w.hidden=e.target.value!=='__other__';if(e.target.value==='__other__')$('#lf_loc_other')?.focus()}}
 });
 document.addEventListener('submit',async e=>{
@@ -845,13 +877,16 @@ document.addEventListener('submit',async e=>{
     }catch(ex){btn.disabled=false;err(ex.code==='auth/email-already-in-use'?'That username is taken.':errText(ex))}
     return;
   }
+  if(f.id==='editItemForm'){saveItemEdit(f.dataset.editsave);return}
   if(f.id==='logForm'){
     const product=$('#lf_product').value.trim();
     const selv=$('#lf_loc').value;const location=(selv==='__other__'?($('#lf_loc_other')?.value||''):selv).trim();
-    const batch=$('#lf_batch').value.trim().toUpperCase();const notes=$('#lf_notes').value.trim();const gtin=$('#lf_gtin').value||null;
+    const batch=((S.scan&&S.scan.batch)||'').toUpperCase();const notes=$('#lf_notes').value.trim();const gtin=$('#lf_gtin').value||null;
     const lines=readLines().filter(l=>l.expiry);
     if(!product){flash('Add a product name');return}
+    if(!location){flash('Choose a section');return}
     if(!lines.length){flash('Add at least one use-by date');return}
+    if(lines.some(l=>!l.qty||Number(l.qty)<1)){flash('Add a quantity for each date');return}
     btn.disabled=true;const bch=writeBatch(fs);const b=by();
     for(const l of lines){const ref=doc(collection(fs,'items'));
       bch.set(ref,{product,gtin,batch,expiry:l.expiry,qty:l.qty?Number(l.qty):null,location,notes,
@@ -873,7 +908,7 @@ document.addEventListener('submit',async e=>{
     }
     quickWrite(bch.commit(),`Saved ${lines.length} ${lines.length===1?'entry':'entries'}: ${product}${newSection?` · new section "${location}" added`:''}`);
     S.scan=null;S.lines=[{expiry:'',qty:''}];const sg=$('#nameSug');if(sg)sg.innerHTML='';
-    ['lf_product','lf_gtin','lf_batch','lf_notes'].forEach(id=>{const el=$('#'+id);if(el)el.value=''});
+    ['lf_product','lf_gtin','lf_notes'].forEach(id=>{const el=$('#'+id);if(el)el.value=''});
     render();$('#scan_in')?.focus();return;
   }
   if(f.id==='sectionForm'){

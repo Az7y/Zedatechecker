@@ -75,7 +75,12 @@ service cloud.firestore {
         && (!(resource.data.status in ['removed', 'sold', 'void'] && request.resource.data.status == 'active')
             || isManager()
             // the person who just removed/sold/deleted it can undo their own action within ~15s
-            || (isMember() && resource.data.lastBy == me().staffId && request.time.toMillis() - resource.data.lastAt < 15000));
+            || (isMember() && resource.data.lastBy == me().staffId && request.time.toMillis() - resource.data.lastAt < 15000))
+        // Editing the entry itself (name, section, date, qty) is Directors and the Boss.
+        // Everyone else may only change status and count, not the product details.
+        && (isManager()
+            || request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'qty', 'history', 'lastAction', 'lastBy', 'lastByName', 'lastAt']));
       allow delete: if false;  // keep the audit trail
     }
 
