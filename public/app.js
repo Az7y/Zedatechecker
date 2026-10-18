@@ -489,11 +489,11 @@ function allView(){
 function activityView(){
   if(!isAdmin())return `<section class="view"><h2>Activity</h2><div class="empty">The activity log is for Directors and the Boss.</div></section>`;
   const ev=[];
-  for(const it of S.items)for(const h of (it.history||[]))if(h.byName){
+  for(const it of S.items)for(const h of (it.history||[]))if(h.byName&&!(h.by==='admin'&&!S.me.owner)){
     const canRestoreNow=['removed','sold','void'].includes(h.action)&&it.status===h.action&&it.lastAt===h.at&&canRestore();
     ev.push({at:h.at,byName:h.byName,restoreId:canRestoreNow?it.id:null,html:`${esc(ACTION[h.action]||h.action)} <b>${esc(it.product)}</b> <span class="batch">${esc(it.batch||'no batch')}</span>`});
   }
-  for(const s of S.sections)for(const h of (s.history||[]))if(h.byName)ev.push({at:h.at,byName:h.byName,html:`checked <b>${esc(s.name)}</b> <span class="note">${new Date(h.at).getHours()<SPLIT_HOUR?'morning':'evening'}${h.note?`, ${esc(h.note)}`:''}</span>`});
+  for(const s of S.sections)for(const h of (s.history||[]))if(h.byName&&!(h.by==='admin'&&!S.me.owner))ev.push({at:h.at,byName:h.byName,html:`checked <b>${esc(s.name)}</b> <span class="note">${new Date(h.at).getHours()<SPLIT_HOUR?'morning':'evening'}${h.note?`, ${esc(h.note)}`:''}</span>`});
   ev.sort((a,b)=>b.at-a.at);
   const by={};for(const e of ev){if(e.at>Date.now()-7*86400000)by[e.byName]=(by[e.byName]||0)+1}
   return `<section class="view"><h2>Activity</h2>
@@ -629,6 +629,51 @@ async function toggleTorch(){
 }
 async function stopCamera(){const c=cam;cam=null;S.camOn=false;torchOn=false;if(c){try{await c.stop()}catch(e){}try{c.clear()}catch(e){}}render()}
 
+/* ---------- hidden easter eggs (harmless, found by curious hands) ---------- */
+const ASCII_BOOM=`     *   .   |   .   *
+        .  -+-  .
+   *  --( B O O M )--  *
+        '  -+-  '
+     *   .   |   .   *`;
+const EGGS={oz7y:'Who is Oz7y',xyzzy:'The magic word',logo:'Logo tickler',sameer:'The idea guy'};
+function eggsFound(){try{return JSON.parse(localStorage.getItem('sdc_eggs')||'[]')}catch(e){return[]}}
+function eggModal(inner){
+  let m=document.getElementById('eggModal');if(m)m.remove();
+  m=document.createElement('div');m.id='eggModal';m.className='egg-modal';
+  m.innerHTML=`<div class="egg-card">${inner}<button type="button" class="btn primary" data-eggclose="1">Nice</button></div>`;
+  document.body.appendChild(m);
+}
+function foundEgg(id,title,body){
+  const found=eggsFound();const isNew=!found.includes(id);
+  if(isNew){found.push(id);try{localStorage.setItem('sdc_eggs',JSON.stringify(found))}catch(e){}}
+  if(navigator.vibrate)navigator.vibrate([25,35,25]);
+  const total=Object.keys(EGGS).length;
+  eggModal(`<pre class="egg-boom">${ASCII_BOOM}</pre><h3>${esc(title)}</h3><p>${esc(body)}</p>
+    <div class="egg-count">${isNew?'New secret unlocked · ':''}${found.length} of ${total} found</div>
+    ${found.length>=total?'<div class="egg-all">🏆 Every secret found. Absolute legend.</div>':''}`);
+}
+function showTrophies(){
+  const found=eggsFound();const total=Object.keys(EGGS).length;
+  const rows=Object.entries(EGGS).map(([id,name])=>`<div class="egg-row">${found.includes(id)?'✅ '+esc(name):'🔒 • • •'}</div>`).join('');
+  eggModal(`<h3>Secrets</h3><div class="egg-list">${rows}</div><div class="egg-count">${found.length} of ${total} found</div>
+    ${found.length<total?'<p class="note">Keep poking around…</p>':''}`);
+}
+let eggCount={},eggResetT=null;
+function tapEgg(which){
+  clearTimeout(eggResetT);eggResetT=setTimeout(()=>{eggCount={}},3000);
+  if(which==='oz7y'){
+    eggCount.oz7y=(eggCount.oz7y||0)+1;const left=6-eggCount.oz7y;
+    if(left>0){flash(`${left} more touch${left===1?'':'es'} to know who Oz7y is…`);return}
+    eggCount={};foundEgg('oz7y','Oz7y, revealed','Oz7y is the one who dreamed up and built Zedatechecker — stacking shelves by day, writing code by night. Now you know. 👋');return;
+  }
+  if(which==='logo'){eggCount.logo=(eggCount.logo||0)+1;if(eggCount.logo>=3){eggCount={};foundEgg('logo','You tickled the logo','It giggled. ✨ Nothing else to see here… or is there?');}return;}
+  if(which==='sameer'){eggCount.sameer=(eggCount.sameer||0)+1;if(eggCount.sameer>=3){eggCount={};foundEgg('sameer','The idea guy','Every good app starts with someone saying “what if…”. That was Sameer. 🌟');}return;}
+  if(which==='ver'){showTrophies();return;}
+}
+const SECRET={
+  'xyzzy':()=>foundEgg('xyzzy','Nothing happens.','…or does it? Any old-school adventurer would smile. You found a secret. 🕸️')
+};
+
 /* ---------- product name lookup (Open Food Facts, free and open) ---------- */
 async function offFetch(gtin){
   const c=new AbortController();const t=setTimeout(()=>c.abort(),6000);
@@ -680,6 +725,7 @@ function scheduleNameSearch(q){
 /* ---------- scanning ---------- */
 function applyScan(raw){
   if(!raw||!raw.trim())return;
+  const _code=raw.trim().toLowerCase();if(SECRET[_code]){SECRET[_code]();return;}
   const sc=parseScan(raw);S.scan=sc;S.tab='log';S.logStep=1;
   S.draft=S.draft||{product:'',gtin:null,batch:'',notes:'',location:''};
   S.draft.gtin=sc.gtin||null;S.draft.batch=sc.batch||'';
@@ -839,6 +885,9 @@ function rememberUser(u){let r=[];try{r=JSON.parse(store.get('sdc_recent')||'[]'
 document.addEventListener('click',e=>{
   // Five taps on the BB badge on the sign-in screen opens the admin sign-in.
   if(e.target.closest('[data-stamp]')&&!S.authUser){S.ownerTaps++;clearTimeout(S.tapT);S.tapT=setTimeout(()=>S.ownerTaps=0,2500);if(S.ownerTaps>=5){S.ownerTaps=0;S.showOwner=true;render()}return}
+  if(e.target.id==='eggModal'){e.target.remove();return}
+  if(e.target.closest('[data-eggclose]')){document.getElementById('eggModal')?.remove();return}
+  const _eg=e.target.closest('[data-egg]');if(_eg){tapEgg(_eg.dataset.egg);return}
   const t=e.target.closest('button');if(!t)return;
   const d=t.dataset;
   if(d.camera){cam?stopCamera():startCamera();return}

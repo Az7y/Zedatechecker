@@ -183,13 +183,24 @@ details.grp>.list{padding:10px 12px}
 .chip.other{border-style:dashed;color:var(--accent);flex-basis:100%}
 .wiznav{display:flex;justify-content:space-between;gap:8px;align-items:center}
 .wiznav .btn.primary{margin-left:auto}
+/* hidden easter-egg modal */
+[data-egg]{-webkit-tap-highlight-color:transparent}
+.egg-modal{position:fixed;inset:0;background:rgba(0,0,0,.72);display:grid;place-items:center;z-index:50;padding:20px}
+.egg-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;max-width:360px;width:100%;display:grid;gap:12px;text-align:center}
+.egg-boom{font-family:var(--mono);color:var(--accent);font-size:12px;line-height:1.2;white-space:pre;overflow-x:auto;margin:0}
+.egg-card h3{font-size:20px}
+.egg-card p{margin:0;color:var(--muted);font-size:14px}
+.egg-count{font:600 12px var(--body);text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+.egg-all{font-weight:700;color:var(--ok)}
+.egg-list{display:grid;gap:8px;text-align:left}
+.egg-row{font-size:15px}
 </style>
 </head>
 <body>
 
 <header class="top" id="top" hidden>
   <div class="bar">
-    <div class="brand"><span class="mark-wrap"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect y="3" width="32" height="29" rx="7" fill="var(--accent)"/><rect x="9" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><rect x="20.4" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><path d="M10 19 l4 4 l9 -10" fill="none" stroke="var(--accent-fg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Zedatechecker</div>
+    <div class="brand"><span class="mark-wrap" data-egg="logo"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect y="3" width="32" height="29" rx="7" fill="var(--accent)"/><rect x="9" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><rect x="20.4" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><path d="M10 19 l4 4 l9 -10" fill="none" stroke="var(--accent-fg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Zedatechecker</div>
     <span class="note" id="storeName"></span>
     <div class="who"><span class="net" id="netState" hidden>Offline, saving on device</span><span>On shift: <b id="whoName"></b></span><button class="btn small" id="themeBtn" type="button" title="Theme">◐ Auto</button><button class="btn small" id="photoBtn" type="button" title="Product photos" aria-pressed="false">▢ Photos</button><button class="btn small" id="signOutBtn">Sign out</button></div>
   </div>
@@ -202,7 +213,7 @@ details.grp>.list{padding:10px 12px}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 17 Oct 2026 · v2.0.2 · Created by Oz7y · idea by Sameer</footer>
+<footer class="appfoot">Updated 18 Oct 2026 · <span data-egg="ver">v2.1</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
 <div class="flash" id="flash" hidden></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
