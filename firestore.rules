@@ -122,6 +122,16 @@ service cloud.firestore {
       allow delete: if isManager();
     }
 
+    // ---------- Date Dash high scores (one per person, their own best) ----------
+    match /scores/{sid} {
+      allow read: if canUse();
+      allow create, update: if isMember() && sid == me().staffId
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && request.resource.data.score is number
+        && request.resource.data.score >= 0 && request.resource.data.score <= 100000;
+      allow delete: if isManager();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

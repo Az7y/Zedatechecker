@@ -29,7 +29,7 @@ const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[],
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
   editStaff:null, editItem:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
-  lines:[{expiry:'',qty:''}], logStep:1, draft:{product:'',gtin:null,batch:'',notes:'',location:''}, offCache:{}, feedback:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null };
+  lines:[{expiry:'',qty:''}], logStep:1, draft:{product:'',gtin:null,batch:'',notes:'',location:''}, offCache:{}, feedback:[], scores:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null };
 
 /* GS1 barcode parsing. Handles plain EAN/UPC, and GS1-128 / DataMatrix / QR element strings
    (with or without brackets, with or without the group separator a scanner sends). */
@@ -155,6 +155,7 @@ function startData(){
   listen(collection(fs,'products'),'products',s=>{const m={};s.docs.forEach(d=>m[d.id]=d.data());S.products=m});
   listen(collection(fs,'sections'),'sections',s=>{S.sections=s.docs.map(d=>({id:d.id,...d.data()}))});
   listen(collection(fs,'feedback'),'feedback',s=>{S.feedback=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.at||0)-(a.at||0))});
+  listen(collection(fs,'scores'),'scores',s=>{S.scores=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.score||0)-(a.score||0));if(document.getElementById('gameModal'))refreshBoard();});
 }
 function resolveMe(){
   if(S.owner){S.me={id:'admin',name:'Boss',role:'director',owner:true};return}
@@ -203,6 +204,7 @@ function render(){
   $('#tabs').innerHTML=tabs.map(t=>`<button role="tab" data-tab="${t}" aria-selected="${t===S.tab}">${TABS[t]}</button>`).join('');
   {const _st=myStreak();$('#whoName').innerHTML=(S.me.owner?'Boss':esc(S.me.name)+' · '+ROLES[myRole()])+(_st>=2?` <span class="streak" title="${_st}-day streak">🔥 ${_st}</span>`:'');}updateThemeBtn();updatePhotoBtn();
   $('#storeName').textContent=S.settings.store||'';
+  {const _se=seasonal();const _b=document.getElementById('brandSeason');if(_b)_b.textContent=_se?' '+_se.emoji:'';}
   app.innerHTML={today:todayView,log:logView,all:allView,activity:activityView,staff:staffView}[S.tab]();
   restore(keep,focused);
   updateBadges();
@@ -211,11 +213,21 @@ function render(){
 function restore(keep,focused){for(const id in keep){const el=document.getElementById(id);if(el)el.value=keep[id]}if(focused){const el=document.getElementById(focused);if(el)el.focus()}}
 const LOGO='<svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect y="3" width="32" height="29" rx="7" fill="var(--accent)"/><rect x="9" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><rect x="20.4" y="0.5" width="2.6" height="7" rx="1.3" fill="var(--accent)"/><path d="M10 19 l4 4 l9 -10" fill="none" stroke="var(--accent-fg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const brand=()=>`<div class="brand"><span class="mark-wrap" data-stamp="1">${LOGO}</span> Zedatechecker</div>`;
+// Seasonal skin: a small emoji by the name on certain days, with a once-a-day hello.
+function seasonal(){const d=new Date(),m=d.getMonth()+1,day=d.getDate();
+  if(m===1&&day===1)return{emoji:'\ud83c\udf86',hello:'Happy New Year! \ud83c\udf86'};
+  if(m===2&&day===14)return{emoji:'\ud83d\udc9d',hello:null};
+  if(m===3&&day===17)return{emoji:'\u2618\ufe0f',hello:'Happy St Patrick\u2019s Day \u2618\ufe0f'};
+  if(m===10&&day>=24)return{emoji:'\ud83c\udf83',hello:'Spooky season \ud83c\udf83'};
+  if(m===12&&day<=26)return{emoji:'\ud83c\udf84',hello:'Happy Christmas! \ud83c\udf84'};
+  if(m===12)return{emoji:'\u2744\ufe0f',hello:null};
+  return null;}
 function briefing(){
   if(S.me.owner)return;
   const round=currentRound(),r=roundState(round),exp=liveItems().filter(i=>daysLeft(i.expiry)<0).length;
   const parts=[];const _st=myStreak();if(_st>=3)parts.push(`🔥 ${_st}-day streak`);if(r.total-r.done)parts.push(`${r.total-r.done} section${r.total-r.done===1?'':'s'} left in the ${round} check`);if(exp)parts.push(`${exp} item${exp===1?'':'s'} to pull`);
-  if(parts.length)flash(parts.join(', '));
+  const _se=seasonal();if(_se&&_se.hello){const today=new Date().toDateString();if(store.get('sdc_season_hi')!==today){store.set('sdc_season_hi',today);parts.unshift(_se.hello);}}
+  if(parts.length)flash(parts.join(' · '));
 }
 
 /* ---------- views ---------- */
@@ -691,9 +703,15 @@ function openGame(){
     <p class="note">Tap the out-of-date items before they vanish. 30 seconds.</p>
     <div class="game-hud"><span>Score <b id="g_score">0</b></span><span>Best <b id="g_best">${best}</b></span><span>Time <b id="g_time">30</b></span></div>
     <div class="game-grid" id="g_grid">${Array.from({length:9}).map((_,i)=>`<button type="button" class="g-cell" data-cell="${i}"></button>`).join('')}</div>
+    <div class="game-board" id="g_board"></div>
     <div class="actions" style="justify-content:center"><button type="button" class="btn primary" data-gamestart="1">Start</button><button type="button" class="btn" data-eggclose="1">Close</button></div>
   </div>`;
-  document.body.appendChild(m);
+  document.body.appendChild(m);refreshBoard();
+}
+function refreshBoard(){
+  const el=document.getElementById('g_board');if(!el)return;
+  const top=(S.scores||[]).slice(0,8);
+  el.innerHTML='<div class="board-h">Store leaderboard</div>'+(top.length?top.map((r,i)=>`<div class="board-row${r.id===S.me?.id?' me':''}"><span>${i+1}. ${esc(r.name||'\u2014')}</span><b>${esc(r.score)}</b></div>`).join(''):'<div class="note">No scores yet. Be the first!</div>');
 }
 function startGame(){
   const grid=document.getElementById('g_grid');if(!grid)return;stopGame();
@@ -712,6 +730,9 @@ function endGame(){
   const best=+(store.get('sdc_game_best')||0);const nb=Math.max(best,st.score);store.set('sdc_game_best',String(nb));
   const bEl=document.getElementById('g_best');if(bEl)bEl.textContent=nb;
   const grid=document.getElementById('g_grid');if(grid)grid.querySelectorAll('.g-cell').forEach(c=>{c.textContent='';c.classList.remove('up')});
+  if(!S.me.owner&&st.score>0){const mine=(S.scores||[]).find(x=>x.id===S.me.id);
+    if(!mine||st.score>(mine.score||0))quickWrite(setDoc(doc(fs,'scores',S.me.id),{name:S.me.name,score:st.score,at:Date.now()}),null);}
+  refreshBoard();
   flash(st.score>best?`🏆 New best: ${st.score}!`:`Time! You cleared ${st.score}.`);
 }
 
