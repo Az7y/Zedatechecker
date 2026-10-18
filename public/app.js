@@ -584,20 +584,42 @@ function staffView(){
 /* ---------- camera scanning ---------- */
 let cam=null;
 let torchOn=false;
+function newCam(){const F=Html5QrcodeSupportedFormats;
+  return new Html5Qrcode('camBox',{formatsToSupport:[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.DATA_MATRIX,F.QR_CODE,F.ITF],useBarCodeDetectorIfSupported:true,verbose:false});}
 async function startCamera(){
   if(!window.Html5Qrcode){flash('Camera scanner didn\'t load. Check the connection.');return}
   S.camOn=true;torchOn=false;render();
-  const F=Html5QrcodeSupportedFormats;
-  cam=new Html5Qrcode('camBox',{formatsToSupport:[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.DATA_MATRIX,F.QR_CODE,F.ITF],useBarCodeDetectorIfSupported:true,verbose:false});
   const onHit=text=>{stopCamera();if(navigator.vibrate)navigator.vibrate(60);applyScan(text)};
-  // Tighter box and a higher-resolution stream so the barcode is readable before the lens finishes focusing.
   const cfg={fps:15,qrbox:(w,h)=>({width:Math.min(320,Math.round(w*0.9)),height:Math.min(210,Math.round(h*0.55))})};
-  const hi={facingMode:'environment',width:{ideal:1920},height:{ideal:1080},advanced:[{focusMode:'continuous'}]};
-  try{await cam.start(hi,cfg,onHit,()=>{})}
-  catch(e){
-    try{await cam.start({facingMode:'environment'},cfg,onHit,()=>{})}
-    catch(e2){S.camOn=false;cam=null;render();flash('Camera blocked. Allow camera access for this site in the browser settings.')}
+  // iOS Safari rejects some constraints (e.g. advanced focusMode) and leaves the
+  // scanner unusable, so try progressively simpler options, each on a fresh instance.
+  const tries=[{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},{facingMode:'environment'},'byId'];
+  let lastErr=null;
+  for(const t of tries){
+    try{
+      if(cam){try{await cam.stop()}catch(e){}try{cam.clear()}catch(e){}}
+      cam=newCam();
+      if(t==='byId'){
+        const cams=await Html5Qrcode.getCameras();
+        if(!cams||!cams.length)throw new Error('NotFoundError');
+        const back=cams.find(c=>/back|rear|environment/i.test(c.label||''))||cams[cams.length-1];
+        await cam.start(back.id,cfg,onHit,()=>{});
+      }else{
+        await cam.start(t,cfg,onHit,()=>{});
+      }
+      try{await cam.applyVideoConstraints({advanced:[{focusMode:'continuous'}]})}catch(e){} // best-effort focus
+      return; // running
+    }catch(e){lastErr=e;}
   }
+  if(cam){try{cam.clear()}catch(e){}}cam=null;S.camOn=false;render();
+  const nm=(lastErr&&(lastErr.name||lastErr.message))||'';
+  flash(/NotAllowed|Permission|Security/i.test(nm)
+      ?'Camera is off for this site. In Safari tap “aA” in the address bar → Website Settings → Camera → Allow, then reload.'
+    :/NotReadable|Track|Abort/i.test(nm)
+      ?'The camera is in use by another app. Close other camera apps and try again.'
+    :/NotFound|OverConstrained|Overconstrained|no cameras/i.test(nm)
+      ?'Couldn\'t open the back camera on this phone. You can still type the barcode or use a Bluetooth scanner.'
+    :'Couldn\'t start the camera'+(nm?` (${nm})`:'')+'. Try reloading, or type the barcode.');
 }
 // Torch helps a lot on iPhones, where the browser gives little focus control. No-op where unsupported.
 async function toggleTorch(){
