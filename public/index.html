@@ -78,7 +78,8 @@ input.mono{font-family:var(--mono);text-transform:uppercase}
 .actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:6px}
 .empty{color:var(--muted);text-align:center;padding:28px 12px;border:1px dashed var(--line);border-radius:10px}
 .note{font-size:13px;color:var(--muted)}
-.flash{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;z-index:20;max-width:calc(100% - 32px)}
+.flash{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;z-index:20;max-width:calc(100% - 32px);pointer-events:none}
+.flash button{pointer-events:auto}
 .warnbox{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 12px;font-size:14px}
 .errbox{background:var(--crit-bg);color:var(--crit);border-radius:8px;padding:10px 12px;font-size:14px}
 .staffpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
