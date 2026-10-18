@@ -194,6 +194,14 @@ details.grp>.list{padding:10px 12px}
 .egg-all{font-weight:700;color:var(--ok)}
 .egg-list{display:grid;gap:8px;text-align:left}
 .egg-row{font-size:15px}
+.streak{font:600 11px var(--body);background:var(--warn-bg);color:var(--warn);border-radius:99px;padding:2px 7px;margin-left:4px;white-space:nowrap}
+/* Date Dash mini-game */
+.game-card{max-width:340px}
+.game-hud{display:flex;justify-content:space-between;font:600 13px var(--body);color:var(--muted)}
+.game-hud b{color:var(--fg);font-variant-numeric:tabular-nums}
+.game-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.g-cell{aspect-ratio:1;border:1px solid var(--line);background:var(--sunk);border-radius:12px;font-size:30px;display:grid;place-items:center;cursor:pointer;line-height:1;padding:0}
+.g-cell.up{background:var(--surface);box-shadow:inset 0 0 0 2px var(--accent)}
 </style>
 </head>
 <body>
@@ -213,7 +221,7 @@ details.grp>.list{padding:10px 12px}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 18 Oct 2026 · <span data-egg="ver">v2.1</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
+<footer class="appfoot">Updated 18 Oct 2026 · <span data-egg="ver">v2.2</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
 <div class="flash" id="flash" hidden></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
