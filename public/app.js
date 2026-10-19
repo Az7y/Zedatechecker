@@ -1107,7 +1107,7 @@ document.addEventListener('submit',async e=>{
   }
   if(f.id==='editItemForm'){saveItemEdit(f.dataset.editsave);return}
   if(f.id==='logStep1Form'){
-    S.draft=S.draft||{};S.draft.product=$('#lf_product').value.trim();S.draft.gtin=$('#lf_gtin').value||null;
+    S.draft=S.draft||{};S.draft.product=$('#lf_product').value.trim();  // keep S.draft.gtin from the scan (the hidden field can be blanked by re-render)
     if(!S.draft.product){flash('Add a product name');return}
     if(cam)stopCamera();S.logStep=2;render();return;
   }
