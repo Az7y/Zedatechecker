@@ -122,6 +122,17 @@ service cloud.firestore {
       allow delete: if isManager();
     }
 
+    // ---------- stores (each person belongs to one; Boss creates and manages them) ----------
+    match /stores/{storeId} {
+      allow read: if canUse();
+      allow create: if isOwner()
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+      // Boss changes anything; a Director may only adjust their store's check times.
+      allow update: if isOwner()
+        || (isManager() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['morningBy', 'eveningBy']));
+      allow delete: if false;  // archive instead
+    }
+
     // ---------- Date Dash high scores (one per person, their own best) ----------
     match /scores/{sid} {
       allow read: if canUse();

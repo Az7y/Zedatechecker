@@ -208,6 +208,13 @@ details.grp>.list{padding:10px 12px}
 .board-row{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:4px 8px;border-radius:6px}
 .board-row.me{background:var(--ok-bg);color:var(--ok)}
 .board-row b{font-variant-numeric:tabular-nums}
+/* multi-store */
+.storesel{font:600 14px var(--body);padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);max-width:190px}
+.storelist{display:grid;gap:10px}
+.storerow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.storerow .stname{flex:1 1 150px;min-width:0}
+.tlab{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--muted)}
+.tlab input{width:auto}
 </style>
 </head>
 <body>
@@ -227,7 +234,7 @@ details.grp>.list{padding:10px 12px}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 18 Oct 2026 · <span data-egg="ver">v2.2</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
+<footer class="appfoot">Updated 18 Oct 2026 · <span data-egg="ver">v2.3</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
 <div class="flash" id="flash" hidden></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>

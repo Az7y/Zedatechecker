@@ -26,7 +26,7 @@ async function createLogin(username, gen, pin){
 }
 
 const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
-  staff:[], items:[], products:{}, settings:null, sections:[],
+  staff:[], items:[], products:{}, settings:null, sections:[], stores:[], storeId:null,
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
   editStaff:null, editItem:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
   lines:[{expiry:'',qty:''}], logStep:1, draft:{product:'',gtin:null,batch:'',notes:'',location:''}, offCache:{}, feedback:[], scores:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null };
@@ -119,8 +119,15 @@ const myRole=()=>roleKey(S.me?.role);
 const atLeast=r=>RANK[myRole()]>=RANK[r];
 const isAdmin=()=>myRole()==='director'||!!S.me?.owner; // Directors manage; Boss (owner) is god mode
 const canRestore=()=>isAdmin();                         // put items back: Director and Boss only
-const activeManagers=()=>S.staff.filter(s=>roleKey(s.role)==='director'&&s.active!==false);
-const liveItems=()=>S.items.filter(i=>i.status==='active'||i.status==='reduced');
+const activeManagers=()=>S.staff.filter(s=>roleKey(s.role)==='director'&&s.active!==false&&staffStore(s)===curStore());
+const primaryStoreId=()=>S.settings?.primaryStore||(S.stores&&S.stores[0]&&S.stores[0].id)||null;
+const curStore=()=>S.storeId||primaryStoreId();
+const itemStore=i=>i.store||primaryStoreId();
+const secStore=x=>x.storeId||primaryStoreId();
+const staffStore=x=>x.storeId||primaryStoreId();
+const activeStores=()=>(S.stores||[]).filter(x=>x.archived!==true).sort((a,b)=>(a.order??0)-(b.order??0)||a.name.localeCompare(b.name));
+const activeStore=()=>(S.stores||[]).find(x=>x.id===curStore())||null;
+const liveItems=()=>S.items.filter(i=>(i.status==='active'||i.status==='reduced')&&itemStore(i)===curStore());
 const errText=e=>e?.code==='permission-denied'?'Your position doesn\'t allow that.':e?.code==='unavailable'||e?.code==='auth/network-request-failed'?'No connection. Try again when online.':'Something went wrong. Try again.';
 
 /* ---------- morning and evening date checks ---------- */
@@ -129,10 +136,10 @@ const SPLIT_HOUR=14;
 const ROUND={morning:'Morning check',evening:'Evening check'};
 const currentRound=()=>new Date().getHours()<SPLIT_HOUR?'morning':'evening';
 function roundWindow(round){const s=new Date();s.setHours(round==='morning'?0:SPLIT_HOUR,0,0,0);const e=new Date();e.setHours(round==='morning'?SPLIT_HOUR:24,0,0,0);return [s.getTime(),e.getTime()]}
-const dueBy=round=>round==='morning'?(S.settings?.morningBy||'09:00'):(S.settings?.eveningBy||'20:00');
+const dueBy=round=>{const st=activeStore();return round==='morning'?(st?.morningBy||S.settings?.morningBy||'09:00'):(st?.eveningBy||S.settings?.eveningBy||'20:00');};
 function roundCheck(s,round){const [a,b]=roundWindow(round);const h=(s.history||[]).filter(x=>x.at>=a&&x.at<b);return h[h.length-1]||null}
 function pastDue(round){const [h,m]=dueBy(round).split(':').map(Number);const n=new Date();return n.getHours()*60+n.getMinutes()>h*60+m}
-const activeSections=()=>S.sections.filter(s=>s.archived!==true).sort((a,b)=>(a.order??0)-(b.order??0)||a.name.localeCompare(b.name));
+const activeSections=()=>S.sections.filter(s=>s.archived!==true&&secStore(s)===curStore()).sort((a,b)=>(a.order??0)-(b.order??0)||a.name.localeCompare(b.name));
 function roundState(round){const secs=activeSections();const rows=secs.map(s=>({s,c:roundCheck(s,round)}));return {rows,done:rows.filter(r=>r.c).length,total:rows.length}}
 function updateBadges(){
   if(!S.me){document.title='Zedatechecker';return}
@@ -156,11 +163,22 @@ function startData(){
   listen(collection(fs,'sections'),'sections',s=>{S.sections=s.docs.map(d=>({id:d.id,...d.data()}))});
   listen(collection(fs,'feedback'),'feedback',s=>{S.feedback=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.at||0)-(a.at||0))});
   listen(collection(fs,'scores'),'scores',s=>{S.scores=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.score||0)-(a.score||0));if(document.getElementById('gameModal'))refreshBoard();});
+  listen(collection(fs,'stores'),'stores',s=>{S.stores=s.docs.map(d=>({id:d.id,...d.data()}));if(!S.storeId)S.storeId=primaryStoreId();});
 }
 function resolveMe(){
-  if(S.owner){S.me={id:'admin',name:'Boss',role:'director',owner:true};return}
+  if(S.owner){S.me={id:'admin',name:'Boss',role:'director',owner:true};if(!S.storeId)S.storeId=primaryStoreId();return}
   const st=S.member&&S.staff.find(x=>x.id===S.member.staffId);
   S.me=st&&st.active!==false?{...st,role:S.member.role}:null;
+  if(S.me)S.storeId=S.member.storeId||primaryStoreId();
+}
+// First time the Boss opens an old single-store app, turn its settings into a real store.
+let _storeMig=false;
+async function ensurePrimaryStore(){
+  if(_storeMig)return;_storeMig=true;
+  try{const now=Date.now();const ref=doc(collection(fs,'stores'));
+    await setDoc(ref,{name:S.settings.store||'Store 1',morningBy:S.settings.morningBy||'09:00',eveningBy:S.settings.eveningBy||'20:00',order:0,archived:false,createdAt:now,createdBy:'Boss'});
+    await updateDoc(doc(fs,'config','settings'),{primaryStore:ref.id});S.storeId=ref.id;
+  }catch(e){_storeMig=false;}
 }
 function boot(){
   applyTheme();
@@ -203,7 +221,10 @@ function render(){
   if(!tabs.includes(S.tab))S.tab='today';
   $('#tabs').innerHTML=tabs.map(t=>`<button role="tab" data-tab="${t}" aria-selected="${t===S.tab}">${TABS[t]}</button>`).join('');
   {const _st=myStreak();$('#whoName').innerHTML=(S.me.owner?'Boss':esc(S.me.name)+' · '+ROLES[myRole()])+(_st>=2?` <span class="streak" title="${_st}-day streak">🔥 ${_st}</span>`:'');}updateThemeBtn();updatePhotoBtn();
-  $('#storeName').textContent=S.settings.store||'';
+  if(!S.storeId)S.storeId=S.me.owner?primaryStoreId():(S.member?.storeId||primaryStoreId());
+  if(S.me.owner&&S.loaded.stores&&(S.stores||[]).length===0&&S.settings&&!S.settings.primaryStore)ensurePrimaryStore();
+  if(S.me.owner){const opts=activeStores().map(x=>`<option value="${x.id}" ${x.id===S.storeId?'selected':''}>${esc(x.name)}</option>`).join('');$('#storeName').innerHTML=opts?`<select id="storeSwitch" class="storesel" aria-label="Store">${opts}</select>`:'<span class="note">No stores yet</span>';}
+  else $('#storeName').textContent=activeStore()?.name||S.settings.store||'';
   {const _se=seasonal();const _b=document.getElementById('brandSeason');if(_b)_b.textContent=_se?' '+_se.emoji:'';}
   app.innerHTML={today:todayView,log:logView,all:allView,activity:activityView,staff:staffView}[S.tab]();
   restore(keep,focused);
@@ -477,6 +498,7 @@ function allView(){
     if(st==='all')return i.status!=='void';
     return i.status===st;
   });
+  arr=arr.filter(i=>itemStore(i)===curStore());
   if(q)arr=arr.filter(i=>(i.product+' '+(i.batch||'')+' '+(i.gtin||'')+' '+(i.location||'')+' '+i.loggedByName).toLowerCase().includes(q));
   const order=new Map(activeSections().map((x,idx)=>[x.name,idx]));
   const groups=new Map();
@@ -531,13 +553,28 @@ function feedbackList(){
   if(!S.me.owner||!S.feedback.length)return '';
   return `<div class="panel"><h3>Suggestions (${S.feedback.length})</h3><div class="log">${S.feedback.slice(0,40).map(f=>`<div class="row"><span class="t">${fmtTime(f.at)}</span><span><b>${esc(f.byName||'Someone')}</b>${f.role?` <span class="note">(${esc(ROLES[roleKey(f.role)]||f.role)})</span>`:''} ${esc(f.message)} <button class="btn small" data-fbdel="${f.id}">Dismiss</button></span></div>`).join('')}</div></div>`;
 }
+function storesPanel(){
+  const ss=activeStores();
+  return `<h2 style="margin-top:8px">Stores</h2>
+  <div class="panel"><h3>Your stores</h3>
+    <p class="note">Each person belongs to one store and sees only that store's items, sections and checks. Switch the store you're viewing from the picker in the top bar.</p>
+    <div class="storelist">${ss.length?ss.map(x=>`<div class="storerow">
+      <input class="stname" id="stn_${x.id}" value="${esc(x.name)}" maxlength="40" aria-label="Store name">
+      <label class="tlab">Morning<input id="stm_${x.id}" type="time" value="${esc(x.morningBy||'09:00')}"></label>
+      <label class="tlab">Evening<input id="ste_${x.id}" type="time" value="${esc(x.eveningBy||'20:00')}"></label>
+      <button class="btn small primary" data-store-save="${x.id}">Save</button>
+      ${ss.length>1?`<button class="btn small danger" data-store-archive="${x.id}">Remove</button>`:''}
+    </div>`).join(''):'<div class="note">No stores yet.</div>'}</div>
+    <form id="storeForm" class="secrow"><input id="store_new" required maxlength="40" placeholder="New store, e.g. Fresh Dundrum" aria-label="New store name"><button class="btn small primary">Add store</button></form>
+  </div>`;
+}
 function staffView(){
   // Floor staff and supervisors only manage their own PIN.
   if(!isAdmin())return `<section class="view"><h2>My account</h2>
     <div class="panel" style="gap:4px"><b>${esc(S.me.name)}</b><div class="note">@${esc(S.me.username)} · ${ROLES[myRole()]}</div></div>
     ${feedbackPanel()}
     ${myPinForm()}</section>`;
-  const list=[...S.staff].sort((a,b)=>(a.active===false)-(b.active===false)||RANK[roleKey(b.role)]-RANK[roleKey(a.role)]||a.name.localeCompare(b.name));
+  const list=[...S.staff].filter(s=>staffStore(s)===curStore()).sort((a,b)=>(a.active===false)-(b.active===false)||RANK[roleKey(b.role)]-RANK[roleKey(a.role)]||a.name.localeCompare(b.name));
   const card=s=>{
     const role=roleKey(s.role);const open=S.editStaff===s.id;const lastMgr=role==='director'&&s.active!==false&&activeManagers().length<=1;
     return `<div class="panel" style="padding:12px 14px;gap:10px">
@@ -552,6 +589,7 @@ function staffView(){
         <label>Position<select id="role_${s.id}" ${lastMgr?'disabled':''}>${Object.entries(ROLES).map(([v,l])=>`<option value="${v}" ${v===role?'selected':''}>${l}</option>`).join('')}</select></label>
         <label>New PIN (blank to keep)<input id="rpin_${s.id}" type="password" class="pin" inputmode="numeric" maxlength="6" autocomplete="new-password"></label>
       </div>
+      ${S.me.owner?`<label>Store<select id="store_${s.id}">${activeStores().map(x=>`<option value="${x.id}" ${x.id===staffStore(s)?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>`:''}
       ${lastMgr?`<div class="note">${esc(s.name)} is the only Director, so their position can't change until someone else is made a Director.</div>`:''}
       <div class="actions">
         <button class="btn small primary" data-staff-save="${s.id}">Save changes</button>
@@ -576,11 +614,11 @@ function staffView(){
     <div id="sfErr"></div><button class="btn primary">Add to team</button>
     <p class="note">Give them their username and PIN in person. They can sign in on any phone and change their own PIN.</p></form>
 
-  <h2 style="margin-top:8px">Date checks</h2>
+  ${S.me.owner?storesPanel():`<h2 style="margin-top:8px">Date checks</h2>
   <form class="panel" id="timesForm"><h3>Check times</h3>
     <div class="grid2"><label>Morning check due by<input id="st_morning" type="time" value="${esc(dueBy('morning'))}" required></label>
     <label>Evening check due by<input id="st_evening" type="time" value="${esc(dueBy('evening'))}" required></label></div>
-    <button class="btn">Save times</button></form>
+    <button class="btn">Save times</button></form>`}
   <div class="panel"><h3>Sections</h3>
     <p class="note">Every section is ticked off in both the morning and evening check. Use the ▲▼ arrows to set the order staff see them in. Anyone can also add a new section while logging a product, by choosing "Other" for the section.</p>
     ${secs.length?`<div class="seclist">${secs.map((s,i)=>`<div class="secrow"><span class="secmove"><button class="btn small ghost" data-sec-up="${s.id}" ${i===0?'disabled':''} aria-label="Move up">▲</button><button class="btn small ghost" data-sec-down="${s.id}" ${i===secs.length-1?'disabled':''} aria-label="Move down">▼</button></span><input id="sn_${s.id}" value="${esc(s.name)}" maxlength="40" aria-label="Section name">
@@ -909,9 +947,9 @@ async function addStaff(){
   try{
     const taken=await getDoc(doc(fs,'logins',username));if(taken.exists()){btn.disabled=false;return err('That username is taken. Try adding an initial or number.')}
     const uid=await createLogin(username,1,pin);
-    const sref=doc(collection(fs,'staff'));const b=writeBatch(fs);
-    b.set(sref,{name,username,role,active:true,authUid:uid,gen:1,createdAt:Date.now(),changes:[{text:`Added as ${ROLES[role]}`,...by()}]});
-    b.set(doc(fs,'members',uid),{staffId:sref.id,role,username});
+    const sref=doc(collection(fs,'staff'));const b=writeBatch(fs);const sid=curStore();
+    b.set(sref,{name,username,role,active:true,storeId:sid,authUid:uid,gen:1,createdAt:Date.now(),changes:[{text:`Added as ${ROLES[role]}`,...by()}]});
+    b.set(doc(fs,'members',uid),{staffId:sref.id,role,username,storeId:sid});
     b.set(doc(fs,'logins',username),{gen:1});
     await b.commit();flash(`${name} added. Username: ${username}`);
     ['sf_name','sf_user','sf_pin'].forEach(i=>{const el=$('#'+i);if(el)el.value=''});$('#sfErr').innerHTML='';
@@ -935,10 +973,11 @@ async function saveStaff(id,btn){
     try{const gen=(s.gen||1)+1;const uid=await createLogin(s.username,gen,pin);
       patch.authUid=uid;patch.gen=gen;
       b.delete(doc(fs,'members',s.authUid));
-      if(s.active!==false)b.set(doc(fs,'members',uid),{staffId:s.id,role:patch.role||s.role,username:s.username});
+      if(s.active!==false)b.set(doc(fs,'members',uid),{staffId:s.id,role:patch.role||s.role,username:s.username,storeId:patch.storeId||s.storeId||primaryStoreId()});
       b.set(doc(fs,'logins',s.username),{gen});notes.push('PIN reset');
     }catch(e){btn.disabled=false;flash(errText(e));return}
   }
+  if(S.me.owner){const nst=$('#store_'+id)?.value;if(nst&&nst!==staffStore(s)){patch.storeId=nst;notes.push('Moved store');if(s.active!==false)b.update(doc(fs,'members',s.authUid),{storeId:nst});}}
   if(!notes.length){flash('Nothing changed');return}
   let ch=s;for(const n of notes)ch={...ch,changes:logChange(ch,n)};patch.changes=ch.changes;
   b.update(doc(fs,'staff',id),patch);
@@ -950,7 +989,7 @@ async function toggleStaff(id){
   const s=S.staff.find(x=>x.id===id);if(!s||!isAdmin()||s.id===S.me.id)return;
   if(s.active!==false&&roleKey(s.role)==='director'&&activeManagers().length<=1){flash('Keep at least one active Director');return}
   const reactivate=s.active===false;const b=writeBatch(fs);
-  if(reactivate)b.set(doc(fs,'members',s.authUid),{staffId:s.id,role:s.role,username:s.username});else b.delete(doc(fs,'members',s.authUid));
+  if(reactivate)b.set(doc(fs,'members',s.authUid),{staffId:s.id,role:s.role,username:s.username,storeId:s.storeId||primaryStoreId()});else b.delete(doc(fs,'members',s.authUid));
   b.update(doc(fs,'staff',id),{active:reactivate,changes:logChange(s,reactivate?'Reactivated':'Deactivated')});
   try{await b.commit();flash(`${s.name} ${reactivate?'reactivated':'deactivated'}`)}catch(e){flash(errText(e))}
 }
@@ -996,6 +1035,8 @@ document.addEventListener('click',e=>{
   if(d.wizback){S.logStep=Math.max(1,(S.logStep||1)-1);if(S.logStep<2&&S.draft)S.draft.addingSection=false;render();return}
   if(d.secSave){const name=$('#sn_'+d.secSave).value.trim();if(name)quickWrite(updateDoc(doc(fs,'sections',d.secSave),{name}),'Section renamed');return}
   if(d.secArchive){const s=S.sections.find(x=>x.id===d.secArchive);quickWrite(updateDoc(doc(fs,'sections',d.secArchive),{archived:true}),`${s?.name||'Section'} removed`);return}
+  if(d.storeSave){const nm=$('#stn_'+d.storeSave)?.value.trim(),mm=$('#stm_'+d.storeSave)?.value,ee=$('#ste_'+d.storeSave)?.value;if(nm)quickWrite(updateDoc(doc(fs,'stores',d.storeSave),{name:nm,morningBy:mm,eveningBy:ee}),'Store saved');return}
+  if(d.storeArchive){const x=S.stores.find(s=>s.id===d.storeArchive);quickWrite(updateDoc(doc(fs,'stores',d.storeArchive),{archived:true}),`${x?.name||'Store'} removed`);if(S.storeId===d.storeArchive)S.storeId=primaryStoreId();return}
   if(d.staffEdit){S.editStaff=S.editStaff===d.staffEdit?null:d.staffEdit;render();return}
   if(d.staffSave){saveStaff(d.staffSave,t);return}
   if(d.staffToggle){toggleStaff(d.staffToggle);return}
@@ -1008,6 +1049,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='f_status'){S.filter.status=e.target.value;render()}
+  if(e.target.id==='storeSwitch'){S.storeId=e.target.value;render();return}
   if(e.target.id==='secjump'){const v=e.target.value;if(v!==''){const el=document.getElementById('grp-'+v);if(el){el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'})}}return}
 });
 document.addEventListener('submit',async e=>{
@@ -1034,14 +1076,14 @@ document.addEventListener('submit',async e=>{
     if(!USERNAME_RE.test(username))return err('Username must be 2 to 20 characters: lowercase letters, numbers, dot, dash or underscore.');
     if(!PIN_RE.test(pin))return err('PIN must be 4 to 6 digits.');
     btn.disabled=true;
-    try{const uid=await createLogin(username,1,pin);const sref=doc(collection(fs,'staff'));const now=Date.now();const b=writeBatch(fs);
-      b.set(sref,{name,username,role:'director',active:true,authUid:uid,gen:1,createdAt:now,changes:[{text:'Added as Director',by:'admin',byName:'',at:now}]});
-      b.set(doc(fs,'members',uid),{staffId:sref.id,role:'director',username});
+    try{const uid=await createLogin(username,1,pin);const sref=doc(collection(fs,'staff'));const storeRef=doc(collection(fs,'stores'));const now=Date.now();const b=writeBatch(fs);
+      b.set(storeRef,{name:store_,morningBy:'09:00',eveningBy:'20:00',order:0,archived:false,createdAt:now,createdBy:name});
+      b.set(sref,{name,username,role:'director',active:true,storeId:storeRef.id,authUid:uid,gen:1,createdAt:now,changes:[{text:'Added as Director',by:'admin',byName:'',at:now}]});
+      b.set(doc(fs,'members',uid),{staffId:sref.id,role:'director',username,storeId:storeRef.id});
       b.set(doc(fs,'logins',username),{gen:1});
-      b.set(doc(fs,'config','settings'),{store:store_,morningBy:'09:00',eveningBy:'20:00',createdAt:now});
-      // Starting sections for the store (every one is checked both morning and evening).
+      b.set(doc(fs,'config','settings'),{store:store_,primaryStore:storeRef.id,morningBy:'09:00',eveningBy:'20:00',createdAt:now});
       ['Aisle 1','Fresh herbs','Pre-made sandwiches & sushi','Pizza fridge 1','Pizza fridge 2','Spider fridge','Bread']
-        .forEach((secName,i)=>b.set(doc(collection(fs,'sections')),{name:secName,archived:false,order:i,createdAt:now,createdBy:name,history:[]}));
+        .forEach((secName,i)=>b.set(doc(collection(fs,'sections')),{name:secName,storeId:storeRef.id,archived:false,order:i,createdAt:now,createdBy:name,history:[]}));
       await b.commit();rememberUser(username);
       flash(`Store set up. Now sign in as ${username}.`);await signOut(auth);
     }catch(ex){btn.disabled=false;err(ex.code==='auth/email-already-in-use'?'That username is taken.':errText(ex))}
@@ -1067,7 +1109,7 @@ document.addEventListener('submit',async e=>{
     if(lines.some(l=>!l.qty||Number(l.qty)<1)){flash('Add a quantity for each date');return}
     btn.disabled=true;const bch=writeBatch(fs);const b=by();
     for(const l of lines){const ref=doc(collection(fs,'items'));
-      bch.set(ref,{product,gtin,batch,expiry:l.expiry,qty:l.qty?Number(l.qty):null,location,notes,
+      bch.set(ref,{product,gtin,batch,expiry:l.expiry,qty:l.qty?Number(l.qty):null,location,notes,store:curStore(),
         status:'active',loggedBy:b.by,loggedByName:b.byName,loggedAt:b.at,lastAction:'logged',lastBy:b.by,lastByName:b.byName,lastAt:b.at,
         history:[{action:'logged',...b}]});}
     if(gtin&&!/^2/.test(gtin)){
@@ -1081,7 +1123,7 @@ document.addEventListener('submit',async e=>{
     }
     let newSection=false;
     if(location&&!activeSections().some(x=>x.name.toLowerCase()===location.toLowerCase())){
-      bch.set(doc(collection(fs,'sections')),{name:location,archived:false,order:Date.now(),createdAt:b.at,createdBy:b.byName||'staff',history:[]});
+      bch.set(doc(collection(fs,'sections')),{name:location,storeId:curStore(),archived:false,order:Date.now(),createdAt:b.at,createdBy:b.byName||'staff',history:[]});
       newSection=true;
     }
     quickWrite(bch.commit(),`Saved ${lines.length} ${lines.length===1?'entry':'entries'}: ${product}${newSection?` · new section "${location}" added`:''}`);
@@ -1091,12 +1133,22 @@ document.addEventListener('submit',async e=>{
   if(f.id==='sectionForm'){
     const name=$('#sec_name').value.trim();if(!name)return;
     if(activeSections().some(s=>s.name.toLowerCase()===name.toLowerCase())){flash('There is already a section with that name');return}
-    quickWrite(addDoc(collection(fs,'sections'),{name,archived:false,order:Date.now(),createdAt:Date.now(),history:[]}),`${name} added`);
+    quickWrite(addDoc(collection(fs,'sections'),{name,storeId:curStore(),archived:false,order:Date.now(),createdAt:Date.now(),history:[]}),`${name} added`);
     $('#sec_name').value='';return;
   }
   if(f.id==='timesForm'){
     const m=$('#st_morning').value,ev=$('#st_evening').value;if(!m||!ev)return;
-    quickWrite(updateDoc(doc(fs,'config','settings'),{morningBy:m,eveningBy:ev}),'Check times saved');return;
+    if(activeStore())quickWrite(updateDoc(doc(fs,'stores',curStore()),{morningBy:m,eveningBy:ev}),'Check times saved');
+    else quickWrite(updateDoc(doc(fs,'config','settings'),{morningBy:m,eveningBy:ev}),'Check times saved');return;
+  }
+  if(f.id==='storeForm'){
+    const name=$('#store_new').value.trim();if(!name)return;
+    if(activeStores().some(x=>x.name.toLowerCase()===name.toLowerCase())){flash('There is already a store with that name');return}
+    const now=Date.now();const b=writeBatch(fs);const storeRef=doc(collection(fs,'stores'));
+    b.set(storeRef,{name,morningBy:'09:00',eveningBy:'20:00',order:(S.stores?.length||0),archived:false,createdAt:now,createdBy:S.me.name||'Boss'});
+    ['Aisle 1','Fresh herbs','Pre-made sandwiches & sushi','Pizza fridge 1','Pizza fridge 2','Spider fridge','Bread']
+      .forEach((secName,i)=>b.set(doc(collection(fs,'sections')),{name:secName,storeId:storeRef.id,archived:false,order:i,createdAt:now,createdBy:S.me.name||'Boss',history:[]}));
+    quickWrite(b.commit(),`${name} added`);$('#store_new').value='';S.storeId=storeRef.id;return;
   }
   if(f.id==='staffForm'){addStaff();return}
   if(f.id==='feedbackForm'){
