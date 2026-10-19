@@ -871,6 +871,7 @@ function applyScan(raw){
   if(known){S.draft.product=known.name;sc.image=known.image||null;}
   S.lines=[{expiry:sc.expiry||'',qty:sc.qty||''}];
   render();
+  {const pe=$('#lf_product');if(pe&&S.draft.product)pe.value=S.draft.product;}
   if(!sc.ok){$('#scan_in')?.focus();return}
   if(sc.gtin&&!known&&(window.__offStub||navigator.onLine)){
     sc.lookup='busy';render();
@@ -1058,7 +1059,14 @@ document.addEventListener('click',e=>{
   if(d.pickloc){S.draft=S.draft||{};S.draft.location=d.pickloc;S.draft.addingSection=false;if(cam)stopCamera();S.logStep=3;render();return}
   if(d.pickother){S.draft=S.draft||{};S.draft.addingSection=true;render();$('#lf_loc_other')?.focus();return}
   if(d.wizback){S.logStep=Math.max(1,(S.logStep||1)-1);if(S.logStep<2&&S.draft)S.draft.addingSection=false;render();return}
-  if(d.secSave){const name=$('#sn_'+d.secSave).value.trim();if(name)quickWrite(updateDoc(doc(fs,'sections',d.secSave),{name}),'Section renamed');return}
+  if(d.secSave){
+    const sec=S.sections.find(x=>x.id===d.secSave);const oldName=sec&&sec.name;const name=$('#sn_'+d.secSave).value.trim();
+    if(!name||name===oldName)return;
+    const b=writeBatch(fs);b.update(doc(fs,'sections',d.secSave),{name});
+    const bb=by();const hit=S.items.filter(i=>i.location===oldName&&itemStore(i)===secStore(sec));
+    hit.forEach(i=>b.update(doc(fs,'items',i.id),{location:name,lastAction:'edited',lastBy:bb.by,lastByName:bb.byName,lastAt:bb.at}));
+    quickWrite(b.commit(),`Section renamed${hit.length?` · ${hit.length} item${hit.length===1?'':'s'} moved`:''}`);return;
+  }
   if(d.secArchive){const s=S.sections.find(x=>x.id===d.secArchive);quickWrite(updateDoc(doc(fs,'sections',d.secArchive),{archived:true}),`${s?.name||'Section'} removed`);return}
   if(d.storeSave){const nm=$('#stn_'+d.storeSave)?.value.trim(),mm=$('#stm_'+d.storeSave)?.value,ee=$('#ste_'+d.storeSave)?.value;if(nm)quickWrite(updateDoc(doc(fs,'stores',d.storeSave),{name:nm,morningBy:mm,eveningBy:ee}),'Store saved');return}
   if(d.storeArchive){const x=S.stores.find(s=>s.id===d.storeArchive);quickWrite(updateDoc(doc(fs,'stores',d.storeArchive),{archived:true}),`${x?.name||'Store'} removed`);if(S.storeId===d.storeArchive)S.storeId=primaryStoreId();return}
