@@ -445,7 +445,7 @@ function scanBox(){
       ${S.camOn?`<button type="button" class="btn" data-torch="1">${torchOn?'Torch off':'Torch'}</button>`:''}
     </div>
     <div id="camBox" ${S.camOn?'':'hidden'}></div>
-    ${S.camOn?`<div class="note">Hold the barcode 10–15&nbsp;cm away and steady. Tap Torch if the light is low.</div>`:''}
+    ${S.camOn?`<div class="note">Hold the barcode about <b>20&nbsp;cm</b> away (a hand's length), not right up against the lens — phone cameras can't focus that close. Keep steady; tap Torch in low light.</div>`:''}
     ${sc?(sc.ok?`<div class="readout">
       ${sc.gtin?`<span><b>Product no.</b>${esc(sc.gtin)}</span>`:''}${sc.batch?`<span><b>Batch</b>${esc(sc.batch)}</span>`:''}
       ${sc.expiry?`<span><b>${sc.expiryKind}</b>${esc(sc.expiry)}</span>`:''}${sc.produced?`<span><b>Packed</b>${esc(sc.produced)}</span>`:''}
@@ -662,7 +662,9 @@ async function startCamera(){
   const cfg={fps:15,qrbox:(w,h)=>({width:Math.min(320,Math.round(w*0.9)),height:Math.min(210,Math.round(h*0.55))})};
   // iOS Safari rejects some constraints (e.g. advanced focusMode) and leaves the
   // scanner unusable, so try progressively simpler options, each on a fresh instance.
-  const tries=[{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},{facingMode:'environment'},'byId'];
+  // Request a high-resolution stream: iPhone Safari won't let us control focus, so more
+  // detail is the main lever that lets a slightly-soft barcode still decode.
+  const tries=[{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},{facingMode:'environment'},'byId'];
   let lastErr=null;
   for(const t of tries){
     try{
