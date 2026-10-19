@@ -29,7 +29,7 @@ const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[], stores:[], storeId:null,
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
   editStaff:null, editItem:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
-  lines:[{expiry:'',qty:''}], logStep:1, draft:{product:'',gtin:null,batch:'',notes:'',location:''}, offCache:{}, feedback:[], scores:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null, deadImg:{} };
+  lines:[{expiry:''}], logStep:1, draft:{product:'',gtin:null,batch:'',notes:'',location:''}, offCache:{}, feedback:[], scores:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null, deadImg:{} };
 
 /* GS1 barcode parsing. Handles plain EAN/UPC, and GS1-128 / DataMatrix / QR element strings
    (with or without brackets, with or without the group separator a scanner sends). */
@@ -349,16 +349,12 @@ function onPhotoPicked(e){
   };
   img.src=url;
 }
-function qtyControl(it,live){
-  if(!live)return it.qty?`<span class="note">× ${esc(it.qty)}</span>`:'';
-  return `<span class="qtywrap"><button type="button" class="qbtn" data-qtyminus="${it.id}" aria-label="Decrease count">&minus;</button><span class="qnum" data-qty="${it.id}">× ${esc(it.qty||0)}</span><button type="button" class="qbtn" data-qtyplus="${it.id}" aria-label="Increase count">+</button></span>`;
-}
 function itemCard(it){
   const n=daysLeft(it.expiry);const [y,m,d]=it.expiry.split('-');const live=it.status==='active'||it.status==='reduced';
   const b=live?band(n):'';const acts=true;
   return `<div class="item">
     <div class="datebox ${b==='ok'?'':b}"><div class="d">${+d}</div><div class="m">${MON[+m-1]} ${y.slice(2)}</div></div>
-    <div class="name">${esc(it.product)} ${qtyControl(it,live)}</div>
+    <div class="name">${esc(it.product)}</div>
     <div class="meta">${it.batch?`<span class="batch">${esc(it.batch)}</span>`:'<span class="nobatch">no batch</span>'}${it.location?`<span>${esc(it.location)}</span>`:''}
       ${itemPhoto(it)}
       ${live?`<span class="pill ${band(n)}">${dueLabel(n)}</span>`:`<span class="pill done">${STATUS[it.status]}</span>`}</div>
@@ -376,7 +372,7 @@ function itemCard(it){
     ${live&&isAdmin()&&S.editItem===it.id?editItemForm(it):''}
   </div>`;
 }
-// Directors and the Boss can fix a logged entry: name, section (for items logged with none), date, qty.
+// Directors and the Boss can fix a logged entry: name, section (for items logged with none), date.
 function editItemForm(it){
   const secs=activeSections();const known=secs.some(x=>x.name===it.location);
   return `<form class="panel edititem" id="editItemForm" data-editsave="${it.id}" style="grid-column:1/-1;gap:10px;margin-top:4px">
@@ -388,7 +384,6 @@ function editItemForm(it){
         ${it.location&&!known?`<option selected>${esc(it.location)}</option>`:''}
       </select></label>
       <label>Use-by<input id="ei_exp_${it.id}" type="date" value="${esc(it.expiry)}" min="2020-01-01" required></label>
-      <label>Qty<input id="ei_qty_${it.id}" type="number" min="1" max="9999" value="${esc(it.qty||'')}" required></label>
     </div>
     <div class="actions"><button class="btn small primary">Save changes</button>
       <button type="button" class="btn small ghost" data-editcancel="1">Cancel</button></div>
@@ -454,7 +449,7 @@ function scanBox(){
     ${sc?(sc.ok?`<div class="readout">
       ${sc.gtin?`<span><b>Product no.</b>${esc(sc.gtin)}</span>`:''}${sc.batch?`<span><b>Batch</b>${esc(sc.batch)}</span>`:''}
       ${sc.expiry?`<span><b>${sc.expiryKind}</b>${esc(sc.expiry)}</span>`:''}${sc.produced?`<span><b>Packed</b>${esc(sc.produced)}</span>`:''}
-      ${sc.qty?`<span><b>Count</b>${esc(sc.qty)}</span>`:''}</div>
+      </div>
       ${lookupNote}
       ${sc.gtin&&S.products[sc.gtin]?'<div class="note">Product name filled from an earlier log.</div>':''}
       ${sc.weightLooksPrice?`<div class="warnbox">This looks like an in-store weighed label. Its number changes with weight and price, so it won't match the same product next time.</div>`:''}
@@ -493,11 +488,11 @@ function logStep2(d){
   <div class="wiznav"><button type="button" class="btn ghost" data-wizback="1">← Back</button></div>`;
 }
 function logStep3(d){
-  const lines=S.lines&&S.lines.length?S.lines:[{expiry:'',qty:''}];
+  const lines=S.lines&&S.lines.length?S.lines:[{expiry:''}];
   return `<div class="note">Logging <b>${esc(d.product)}</b> · ${esc(d.location)}</div>
   <form class="panel" id="logForm" autocomplete="off">
     <div class="datelines">
-      <div class="dl-head"><span>Use-by / best-before</span><span>Qty</span><span></span></div>
+      <div class="dl-head"><span>Use-by / best-before</span><span></span></div>
       <div id="dateLines">${lines.map((l,i)=>dlineRow(l,i,lines.length)).join('')}</div>
       <button type="button" class="btn small" data-addline="1">+ Add another date</button>
       <div class="note">One row per different date on the shelf. Each is saved as its own entry.</div>
@@ -509,12 +504,11 @@ function logStep3(d){
 function dlineRow(l,i,total){
   return `<div class="dline">
     <input class="dl-exp" type="date" value="${esc(l.expiry||'')}" min="2020-01-01" aria-label="Use-by date">
-    <input class="dl-qty" type="number" min="1" max="9999" value="${esc(l.qty||'')}" placeholder="Qty" aria-label="Quantity">
     ${total>1?`<button type="button" class="btn small ghost" data-delline="${i}" aria-label="Remove date">&times;</button>`:'<span></span>'}
   </div>`;
 }
 function readLines(){const dl=document.querySelectorAll('#dateLines .dline');
-  return dl.length?[...dl].map(r=>({expiry:r.querySelector('.dl-exp').value,qty:r.querySelector('.dl-qty').value})):[{expiry:'',qty:''}];}
+  return dl.length?[...dl].map(r=>({expiry:r.querySelector('.dl-exp').value})):[{expiry:''}];}
 function allView(){
   const q=S.filter.q.trim().toLowerCase();const st=S.filter.status;
   let arr=S.items.filter(i=>{
@@ -869,7 +863,7 @@ function applyScan(raw){
   S.draft.gtin=sc.gtin||null;S.draft.batch=sc.batch||'';
   const known=sc.gtin&&S.products[sc.gtin];
   if(known){S.draft.product=known.name;sc.image=known.image||null;}
-  S.lines=[{expiry:sc.expiry||'',qty:sc.qty||''}];
+  S.lines=[{expiry:sc.expiry||''}];
   render();
   {const pe=$('#lf_product');if(pe&&S.draft.product)pe.value=S.draft.product;}
   if(!sc.ok){$('#scan_in')?.focus();return}
@@ -911,13 +905,12 @@ const UNDOABLE=['removed','sold','void'];
 function saveItemEdit(id){
   if(!isAdmin())return;const it=S.items.find(i=>i.id===id);if(!it)return;
   const product=$('#ei_prod_'+id).value.trim();const location=$('#ei_loc_'+id).value;
-  const expiry=$('#ei_exp_'+id).value;const qv=$('#ei_qty_'+id).value;
+  const expiry=$('#ei_exp_'+id).value;
   if(!product){flash('Add a product name');return}
   if(!location){flash('Choose a section');return}
   if(!expiry){flash('Add a use-by date');return}
-  if(!qv||Number(qv)<1){flash('Add a quantity');return}
   const b=by();
-  quickWrite(updateDoc(doc(fs,'items',id),{product,location,expiry,qty:Number(qv),lastAction:'edited',lastBy:b.by,lastByName:b.byName,lastAt:b.at,history:[...(it.history||[]),{action:'edited',...b}].slice(-30)}),`${product} updated`);
+  quickWrite(updateDoc(doc(fs,'items',id),{product,location,expiry,lastAction:'edited',lastBy:b.by,lastByName:b.byName,lastAt:b.at,history:[...(it.history||[]),{action:'edited',...b}].slice(-30)}),`${product} updated`);
   S.editItem=null;render();
 }
 function setItemStatus(id,act){
@@ -936,16 +929,6 @@ function revertItem(id,status,history){
   quickWrite(updateDoc(doc(fs,'items',id),{status,history,lastAction:last.action,lastBy:b.by,lastByName:b.byName,lastAt:b.at}),'Undone');
 }
 // +/- shelf count beside an item. Taps are coalesced into one write after a short pause.
-const qtyTimers={},qtyPending={};
-function adjustQty(id,delta){
-  const it=S.items.find(i=>i.id===id);if(!it)return;
-  const base=qtyPending[id]!=null?qtyPending[id]:(Number(it.qty)||0);
-  const next=Math.max(0,base+delta);qtyPending[id]=next;it.qty=next;
-  const span=document.querySelector(`[data-qty="${id}"]`);if(span)span.textContent='× '+next;
-  clearTimeout(qtyTimers[id]);
-  qtyTimers[id]=setTimeout(()=>{const v=qtyPending[id];delete qtyPending[id];const b=by();
-    quickWrite(updateDoc(doc(fs,'items',id),{qty:v,lastAction:'adjusted',lastBy:b.by,lastByName:b.byName,lastAt:b.at}),null);},700);
-}
 function checkSection(id){
   const s=S.sections.find(x=>x.id===id);if(!s)return;
   const note=($('#cn_'+id)?.value||'').trim().slice(0,80);const b=by();
@@ -1049,13 +1032,11 @@ document.addEventListener('click',e=>{
   if(d.ownerClose){S.showOwner=false;render();return}
   if(d.recent){$('#li_user').value=d.recent;$('#li_pin').focus();return}
   if(d.tab&&cam)stopCamera();
-  if(d.tab){if(d.tab==='log'){S.logStep=1;S.draft={product:'',gtin:null,batch:'',notes:'',location:''};S.lines=[{expiry:'',qty:''}];S.scan=null;}S.tab=d.tab;window.scrollTo(0,0);render();if(S.tab==='log')$('#scan_in')?.focus();return}
-  if(d.qtyplus){adjustQty(d.qtyplus,1);return}
-  if(d.qtyminus){adjustQty(d.qtyminus,-1);return}
+  if(d.tab){if(d.tab==='log'){S.logStep=1;S.draft={product:'',gtin:null,batch:'',notes:'',location:''};S.lines=[{expiry:''}];S.scan=null;}S.tab=d.tab;window.scrollTo(0,0);render();if(S.tab==='log')$('#scan_in')?.focus();return}
   if(d.act){t.disabled=true;setItemStatus(d.id,d.act);return}
   if(d.check){t.disabled=true;checkSection(d.check);return}
-  if(d.addline){S.lines=readLines();S.lines.push({expiry:'',qty:''});render();return}
-  if(d.delline!==undefined){S.lines=readLines();S.lines.splice(+d.delline,1);if(!S.lines.length)S.lines=[{expiry:'',qty:''}];render();return}
+  if(d.addline){S.lines=readLines();S.lines.push({expiry:''});render();return}
+  if(d.delline!==undefined){S.lines=readLines();S.lines.splice(+d.delline,1);if(!S.lines.length)S.lines=[{expiry:''}];render();return}
   if(d.pickloc){S.draft=S.draft||{};S.draft.location=d.pickloc;S.draft.addingSection=false;if(cam)stopCamera();S.logStep=3;render();return}
   if(d.pickother){S.draft=S.draft||{};S.draft.addingSection=true;render();$('#lf_loc_other')?.focus();return}
   if(d.wizback){S.logStep=Math.max(1,(S.logStep||1)-1);if(S.logStep<2&&S.draft)S.draft.addingSection=false;render();return}
@@ -1078,7 +1059,7 @@ document.addEventListener('input',e=>{
   if(e.target.id==='f_q'){S.filter.q=e.target.value;render()}
   if(e.target.id==='lf_product')checkDup();
   if(e.target.id==='lf_product')scheduleNameSearch(e.target.value);
-  if(e.target.classList&&(e.target.classList.contains('dl-exp')||e.target.classList.contains('dl-qty')))S.lines=readLines();
+  if(e.target.classList&&e.target.classList.contains('dl-exp'))S.lines=readLines();
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='f_status'){S.filter.status=e.target.value;render()}
@@ -1139,10 +1120,9 @@ document.addEventListener('submit',async e=>{
     if(!product){flash('Add a product name');S.logStep=1;render();return}
     if(!location){flash('Choose a section');S.logStep=2;render();return}
     if(!lines.length){flash('Add at least one use-by date');return}
-    if(lines.some(l=>!l.qty||Number(l.qty)<1)){flash('Add a quantity for each date');return}
     btn.disabled=true;const bch=writeBatch(fs);const b=by();
     for(const l of lines){const ref=doc(collection(fs,'items'));
-      bch.set(ref,{product,gtin,batch,expiry:l.expiry,qty:l.qty?Number(l.qty):null,location,notes,store:curStore(),
+      bch.set(ref,{product,gtin,batch,expiry:l.expiry,location,notes,store:curStore(),
         status:'active',loggedBy:b.by,loggedByName:b.byName,loggedAt:b.at,lastAction:'logged',lastBy:b.by,lastByName:b.byName,lastAt:b.at,
         history:[{action:'logged',...b}]});}
     if(gtin&&!/^2/.test(gtin)){
@@ -1160,7 +1140,7 @@ document.addEventListener('submit',async e=>{
       newSection=true;
     }
     quickWrite(bch.commit(),`Saved ${lines.length} ${lines.length===1?'entry':'entries'}: ${product}${newSection?` · new section "${location}" added`:''}`);
-    S.scan=null;S.lines=[{expiry:'',qty:''}];S.draft={product:'',gtin:null,batch:'',notes:'',location:''};S.logStep=1;
+    S.scan=null;S.lines=[{expiry:''}];S.draft={product:'',gtin:null,batch:'',notes:'',location:''};S.logStep=1;
     render();$('#scan_in')?.focus();return;
   }
   if(f.id==='sectionForm'){
