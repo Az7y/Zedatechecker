@@ -28,7 +28,7 @@ async function createLogin(username, gen, pin){
 const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[], stores:[], storeId:null,
   loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
-  editStaff:null, editItem:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
+  editStaff:null, editItem:null, editLines:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
   lines:[{expiry:''}], logStep:1, draft:{product:'',gtin:null,batch:'',notes:'',location:''}, offCache:{}, feedback:[], scores:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null, deadImg:{} };
 
 /* GS1 barcode parsing. Handles plain EAN/UPC, and GS1-128 / DataMatrix / QR element strings
@@ -355,7 +355,7 @@ function itemCard(it){
   return `<div class="item">
     <div class="datebox ${b==='ok'?'':b}"><div class="d">${+d}</div><div class="m">${MON[+m-1]} ${y.slice(2)}</div></div>
     <div class="name">${esc(it.product)}</div>
-    <div class="meta">${it.batch?`<span class="batch">${esc(it.batch)}</span>`:'<span class="nobatch">no batch</span>'}${it.location?`<span>${esc(it.location)}</span>`:''}
+    <div class="meta">${it.location?`<span>${esc(it.location)}</span>`:''}
       ${itemPhoto(it)}
       ${live?`<span class="pill ${band(n)}">${dueLabel(n)}</span>`:`<span class="pill done">${STATUS[it.status]}</span>`}</div>
     <div class="meta"><span>Logged by ${esc(it.loggedByName)} · ${fmtTime(it.loggedAt)}</span>
@@ -375,20 +375,32 @@ function itemCard(it){
 // Directors and the Boss can fix a logged entry: name, section (for items logged with none), date.
 function editItemForm(it){
   const secs=activeSections();const known=secs.some(x=>x.name===it.location);
-  return `<form class="panel edititem" id="editItemForm" data-editsave="${it.id}" style="grid-column:1/-1;gap:10px;margin-top:4px">
+  const lines=S.editLines&&S.editLines.length?S.editLines:[{expiry:it.expiry||''}];
+  return `<form class="panel edititem" id="editItemForm" data-editsave="${it.id}" style="grid-column:1/-1;gap:12px;margin-top:4px">
     <label>Product<input id="ei_prod_${it.id}" value="${esc(it.product)}" maxlength="80" required></label>
-    <div class="grid2">
-      <label>Section<select id="ei_loc_${it.id}" required>
-        <option value="">— choose —</option>
-        ${secs.map(x=>`<option ${x.name===it.location?'selected':''}>${esc(x.name)}</option>`).join('')}
-        ${it.location&&!known?`<option selected>${esc(it.location)}</option>`:''}
-      </select></label>
-      <label>Use-by<input id="ei_exp_${it.id}" type="date" value="${esc(it.expiry)}" min="2020-01-01" required></label>
+    <label>Section<select id="ei_loc_${it.id}" required>
+      <option value="">— choose —</option>
+      ${secs.map(x=>`<option ${x.name===it.location?'selected':''}>${esc(x.name)}</option>`).join('')}
+      ${it.location&&!known?`<option selected>${esc(it.location)}</option>`:''}
+    </select></label>
+    <div class="datelines">
+      <div class="dl-head"><span>Use-by / best-before</span><span></span></div>
+      <div id="editLines">${lines.map((l,i)=>eilineRow(l,i,lines.length)).join('')}</div>
+      <button type="button" class="btn small" data-eiaddline="1">+ Add another date</button>
+      <div class="note">First row updates this entry. Extra dates are saved as new entries for the same product and section.</div>
     </div>
     <div class="actions"><button class="btn small primary">Save changes</button>
       <button type="button" class="btn small ghost" data-editcancel="1">Cancel</button></div>
   </form>`;
 }
+function eilineRow(l,i,total){
+  return `<div class="dline">
+    <input class="ei-exp" type="date" value="${esc(l.expiry||'')}" min="2020-01-01" aria-label="Use-by date">
+    ${total>1?`<button type="button" class="btn small ghost" data-eidelline="${i}" aria-label="Remove date">&times;</button>`:'<span></span>'}
+  </div>`;
+}
+function readEditLines(){const dl=document.querySelectorAll('#editLines .dline');
+  return dl.length?[...dl].map(r=>({expiry:r.querySelector('.ei-exp').value})):[{expiry:''}];}
 function roundPanel(round,active){
   const r=roundState(round);const late=pastDue(round);
   const pct=r.total?Math.round(r.done/r.total*100):0;const complete=r.total&&r.done===r.total;
@@ -426,7 +438,7 @@ function todayView(){
       <div class="count crit" style="opacity:.85"><span class="n">${soon.length}</span><span class="l">0–2 days</span></div>
       <div class="count warn"><span class="n">${week.length}</span><span class="l">3–7 days</span></div>
     </div>
-    ${live.length===0?`<div class="empty">Nothing logged yet. Go to <b>Log product</b> and add the first item you check, with its batch code and use-by date.</div>`
+    ${live.length===0?`<div class="empty">Nothing logged yet. Go to <b>Log product</b> and add the first item you check, with its use-by date.</div>`
       :blocks.length?blocks.map(x=>block(x[0],x[1])).join(''):`<div class="okbox">Nothing due in the next 7 days. Nice.</div>`}
     ${checks}
   </section>`;
@@ -447,13 +459,13 @@ function scanBox(){
     <div id="camBox" ${S.camOn?'':'hidden'}></div>
     ${S.camOn?`<div class="note">Hold the barcode about <b>20&nbsp;cm</b> away (a hand's length), not right up against the lens — phone cameras can't focus that close. Keep steady; tap Torch in low light.</div>`:''}
     ${sc?(sc.ok?`<div class="readout">
-      ${sc.gtin?`<span><b>Product no.</b>${esc(sc.gtin)}</span>`:''}${sc.batch?`<span><b>Batch</b>${esc(sc.batch)}</span>`:''}
+      ${sc.gtin?`<span><b>Product no.</b>${esc(sc.gtin)}</span>`:''}
       ${sc.expiry?`<span><b>${sc.expiryKind}</b>${esc(sc.expiry)}</span>`:''}${sc.produced?`<span><b>Packed</b>${esc(sc.produced)}</span>`:''}
       </div>
       ${lookupNote}
       ${sc.gtin&&S.products[sc.gtin]?'<div class="note">Product name filled from an earlier log.</div>':''}
       ${sc.weightLooksPrice?`<div class="warnbox">This looks like an in-store weighed label. Its number changes with weight and price, so it won't match the same product next time.</div>`:''}
-      ${onShelf.length?`<div class="warnbox">Already on the list: ${onShelf.map(i=>`${esc(i.batch||'no batch')} (use-by ${esc(i.expiry)})`).join(', ')}</div>`:''}`
+      ${onShelf.length?`<div class="warnbox">Already on the list: ${onShelf.map(i=>`use-by ${esc(i.expiry)}`).join(', ')}</div>`:''}`
       :`<div class="errbox">Couldn't read that barcode. Check it scanned fully, or type the name below.</div>`):''}
   </div>`;
 }
@@ -518,7 +530,7 @@ function allView(){
     return i.status===st;
   });
   arr=arr.filter(i=>itemStore(i)===curStore());
-  if(q)arr=arr.filter(i=>(i.product+' '+(i.batch||'')+' '+(i.gtin||'')+' '+(i.location||'')+' '+i.loggedByName).toLowerCase().includes(q));
+  if(q){const toks=q.split(/\s+/).filter(Boolean);arr=arr.filter(i=>{const hay=(i.product+' '+(i.batch||'')+' '+(i.gtin||'')+' '+(i.location||'')+' '+i.loggedByName).toLowerCase();return toks.every(t=>hay.includes(t));});}
   const order=new Map(activeSections().map((x,idx)=>[x.name,idx]));
   const groups=new Map();
   for(const it of arr){const key=it.location||'';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(it)}
@@ -533,7 +545,7 @@ function allView(){
     return `<details class="grp" id="grp-${i}" open><summary><span>${label(k)}</span> <span class="cnt">${items.length}</span></summary><div class="list">${items.map(itemCard).join('')}</div></details>`;
   }).join('')}</div>`:'<div class="empty">No items match.</div>';
   return `<section class="view"><h2>All items</h2>
-    <div class="filters"><input id="f_q" type="search" placeholder="Search product, batch, barcode, section or name" value="${esc(S.filter.q)}">
+    <div class="filters"><input id="f_q" type="search" placeholder="Search product, barcode, section or name — any words" value="${esc(S.filter.q)}">
     <select id="f_status">${[['active','On shelf'],['removed','Removed'],['sold','Sold through'],['void','Deleted'],['all','Everything']].map(([v,l])=>`<option value="${v}" ${st===v?'selected':''}>${l}</option>`).join('')}</select></div>
     <div class="note">${arr.length} item${arr.length===1?'':'s'}</div>
     ${nav}
@@ -544,7 +556,7 @@ function activityView(){
   const ev=[];
   for(const it of S.items)for(const h of (it.history||[]))if(h.byName&&!(h.by==='admin'&&!S.me.owner)){
     const canRestoreNow=['removed','sold','void'].includes(h.action)&&it.status===h.action&&it.lastAt===h.at&&canRestore();
-    ev.push({at:h.at,byName:h.byName,restoreId:canRestoreNow?it.id:null,html:`${esc(ACTION[h.action]||h.action)} <b>${esc(it.product)}</b> <span class="batch">${esc(it.batch||'no batch')}</span>`});
+    ev.push({at:h.at,byName:h.byName,restoreId:canRestoreNow?it.id:null,html:`${esc(ACTION[h.action]||h.action)} <b>${esc(it.product)}</b>`});
   }
   for(const s of S.sections)for(const h of (s.history||[]))if(h.byName&&!(h.by==='admin'&&!S.me.owner))ev.push({at:h.at,byName:h.byName,html:`checked <b>${esc(s.name)}</b> <span class="note">${new Date(h.at).getHours()<SPLIT_HOUR?'morning':'evening'}${h.note?`, ${esc(h.note)}`:''}</span>`});
   ev.sort((a,b)=>b.at-a.at);
@@ -701,11 +713,11 @@ async function toggleTorch(){
 async function stopCamera(){const c=cam;cam=null;S.camOn=false;torchOn=false;if(c){try{await c.stop()}catch(e){}try{c.clear()}catch(e){}}render()}
 
 /* ---------- hidden easter eggs (harmless, found by curious hands) ---------- */
-const ASCII_BOOM=`     *   .   |   .   *
-        .  -+-  .
-   *  --( B O O M )--  *
-        '  -+-  '
-     *   .   |   .   *`;
+const ASCII_BOOM=`.   *   |   *   .
+  *  --=+=--  *
+--=[ B O O M ]=--
+  *  --=+=--  *
+.   *   |   *   .`;
 const EGGS={oz7y:'Who is Oz7y',alohomora:'The unlocking charm',logo:'Logo tickler',sameer:'The idea guy',quidditch:'Seeker'};
 function eggsFound(){try{return JSON.parse(localStorage.getItem('sdc_eggs')||'[]')}catch(e){return[]}}
 function eggModal(inner){
@@ -907,13 +919,19 @@ const UNDOABLE=['removed','sold','void'];
 function saveItemEdit(id){
   if(!isAdmin())return;const it=S.items.find(i=>i.id===id);if(!it)return;
   const product=$('#ei_prod_'+id).value.trim();const location=$('#ei_loc_'+id).value;
-  const expiry=$('#ei_exp_'+id).value;
+  const lines=readEditLines().filter(l=>l.expiry);
   if(!product){flash('Add a product name');return}
   if(!location){flash('Choose a section');return}
-  if(!expiry){flash('Add a use-by date');return}
-  const b=by();
-  quickWrite(updateDoc(doc(fs,'items',id),{product,location,expiry,lastAction:'edited',lastBy:b.by,lastByName:b.byName,lastAt:b.at,history:[...(it.history||[]),{action:'edited',...b}].slice(-30)}),`${product} updated`);
-  S.editItem=null;render();
+  if(!lines.length){flash('Add a use-by date');return}
+  const b=by();const bch=writeBatch(fs);
+  bch.update(doc(fs,'items',id),{product,location,expiry:lines[0].expiry,lastAction:'edited',lastBy:b.by,lastByName:b.byName,lastAt:b.at,history:[...(it.history||[]),{action:'edited',...b}].slice(-30)});
+  const extra=lines.slice(1);
+  for(const l of extra){const ref=doc(collection(fs,'items'));
+    bch.set(ref,{product,gtin:it.gtin||null,batch:it.batch||'',expiry:l.expiry,location,notes:it.notes||'',store:itemStore(it),
+      status:'active',loggedBy:b.by,loggedByName:b.byName,loggedAt:b.at,lastAction:'logged',lastBy:b.by,lastByName:b.byName,lastAt:b.at,
+      history:[{action:'logged',...b}]});}
+  quickWrite(bch.commit(),extra.length?`${product} updated · ${extra.length} more date${extra.length===1?'':'s'} added`:`${product} updated`);
+  S.editItem=null;S.editLines=null;render();
 }
 function setItemStatus(id,act){
   const it=S.items.find(i=>i.id===id);if(!it)return;
@@ -1025,8 +1043,8 @@ document.addEventListener('click',e=>{
   if(t.id==='themeBtn'){cycleTheme();return}
   if(t.id==='photoBtn'){store.set('sdc_photos',photosOn()?null:'1');render();return}
   if(d.fbdel){if(S.me.owner)quickWrite(deleteDoc(doc(fs,'feedback',d.fbdel)),'Dismissed');return}
-  if(d.edititem){S.editItem=S.editItem===d.edititem?null:d.edititem;render();return}
-  if(d.editcancel){S.editItem=null;render();return}
+  if(d.edititem){const op=S.editItem===d.edititem?null:d.edititem;S.editItem=op;if(op){const it=S.items.find(i=>i.id===op);S.editLines=[{expiry:(it&&it.expiry)||''}];}else S.editLines=null;render();return}
+  if(d.editcancel){S.editItem=null;S.editLines=null;render();return}
   if(d.torch){toggleTorch();return}
   if(d.secUp){moveSection(d.secUp,-1);return}
   if(d.secDown){moveSection(d.secDown,1);return}
@@ -1039,6 +1057,8 @@ document.addEventListener('click',e=>{
   if(d.check){t.disabled=true;checkSection(d.check);return}
   if(d.addline){S.lines=readLines();S.lines.push({expiry:''});render();return}
   if(d.delline!==undefined){S.lines=readLines();S.lines.splice(+d.delline,1);if(!S.lines.length)S.lines=[{expiry:''}];render();return}
+  if(d.eiaddline){S.editLines=readEditLines();S.editLines.push({expiry:''});render();return}
+  if(d.eidelline!==undefined){S.editLines=readEditLines();S.editLines.splice(+d.eidelline,1);if(!S.editLines.length)S.editLines=[{expiry:''}];render();return}
   if(d.pickloc){S.draft=S.draft||{};S.draft.location=d.pickloc;S.draft.addingSection=false;if(cam)stopCamera();S.logStep=3;render();return}
   if(d.pickother){S.draft=S.draft||{};S.draft.addingSection=true;render();$('#lf_loc_other')?.focus();return}
   if(d.wizback){S.logStep=Math.max(1,(S.logStep||1)-1);if(S.logStep<2&&S.draft)S.draft.addingSection=false;render();return}
@@ -1062,6 +1082,7 @@ document.addEventListener('input',e=>{
   if(e.target.id==='lf_product')checkDup();
   if(e.target.id==='lf_product')scheduleNameSearch(e.target.value);
   if(e.target.classList&&e.target.classList.contains('dl-exp'))S.lines=readLines();
+  if(e.target.classList&&e.target.classList.contains('ei-exp'))S.editLines=readEditLines();
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='f_status'){S.filter.status=e.target.value;render()}
