@@ -569,7 +569,7 @@ function allView(){
     ${body}</section>`;
 }
 function activityView(){
-  if(!isAdmin())return `<section class="view"><h2>Activity</h2><div class="empty">The activity log is for Directors and the Boss.</div></section>`;
+  if(!isAdmin())return `<section class="view"><h2>Activity</h2><div class="empty">The activity log is for Directors.</div></section>`;
   const ev=[];
   for(const it of S.items)for(const h of (it.history||[]))if(h.byName&&!(h.by==='admin'&&!S.me.owner)){
     const canRestoreNow=['removed','sold','void'].includes(h.action)&&it.status===h.action&&it.lastAt===h.at&&canRestore();
@@ -651,7 +651,7 @@ function staffView(){
   <div class="panel" style="gap:6px"><h3>What each position can do</h3>
     <div class="note"><b>NPC:</b> morning and evening checks, log products, remove from shelf, mark sold through, delete a mistaken entry, change their own PIN.</div>
     <div class="note"><b>Director:</b> everything an NPC can, plus put items back on the shelf, see the activity log, and this Staff page: add people, change positions, reset PINs, deactivate staff, reorder sections and set check times.</div>
-    <div class="note"><b>Boss:</b> full access to everything, including the suggestions inbox.</div>
+    ${S.me.owner?'<div class="note"><b>Boss:</b> full access to everything, including the suggestions inbox.</div>':''}
     <div class="note">NPCs only see "Change my PIN" here.</div></div>
   <div class="list">${list.map(card).join('')}</div>
   <form class="panel" id="staffForm" autocomplete="off"><h3>Add a team member</h3>
@@ -952,7 +952,7 @@ function saveItemEdit(id){
 }
 function setItemStatus(id,act){
   const it=S.items.find(i=>i.id===id);if(!it)return;
-  if(act==='restored'&&!canRestore()){flash('Only a Director or the Boss can put items back');return}
+  if(act==='restored'&&!canRestore()){flash('Only a Director can put items back');return}
   const prevStatus=it.status,prevHistory=(it.history||[]).slice();
   const status=act==='restored'?'active':act;const b=by();
   const history=[...(it.history||[]),{action:act,...b}].slice(-30);
