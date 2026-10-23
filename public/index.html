@@ -102,9 +102,15 @@ td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
 .stockcard{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:12px;display:grid;gap:8px}
 .stockcard-h{display:flex;justify-content:space-between;align-items:center;font:700 13px var(--body);text-transform:uppercase;letter-spacing:.05em;color:var(--fg)}
 .stockcard-n{font:600 12px var(--body);color:var(--muted);text-transform:none;letter-spacing:0}
-.stockrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.stockrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%;text-align:left;padding:8px 10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:inherit;cursor:pointer}
+.stockrow:active{box-shadow:inset 0 0 0 2px var(--accent)}
 .stockdate{font-weight:600;font-variant-numeric:tabular-nums}
 .stockloc{color:var(--muted);font-size:13px;margin-left:auto}
+.stockrow .chev{color:var(--muted);font-size:20px;line-height:1}
+.stockrow .stockloc+.chev{margin-left:6px}
+.stockrow .stockdate+.pill+.chev{margin-left:auto}
+.flash-item{animation:flashItem 1.8s ease-out}
+@keyframes flashItem{0%,30%{box-shadow:0 0 0 2px var(--accent);background:var(--ok-bg)}100%{box-shadow:0 0 0 0 transparent}}
 .readout span{font:500 12px var(--mono);background:var(--sunk);padding:3px 8px;border-radius:4px}
 .readout b{font-family:var(--body);font-weight:600;color:var(--muted);margin-right:4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -241,9 +247,25 @@ details.grp>.list{padding:10px 12px}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 23 Oct 2026 · <span data-egg="ver">v2.5.1</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
+<footer class="appfoot">Updated 23 Oct 2026 · <span data-egg="ver">v2.6.0</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
 <div class="flash" id="flash" hidden></div>
 
+<!-- Give iPhones a WASM barcode detector (Safari ships none), so html5-qrcode uses it like Android's native one.
+     Registers window.BarcodeDetector only if the browser lacks it; Android keeps its faster native detector. -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/barcode-detector@3.2.1/dist/es/polyfill.min.js"></script>
+<script type="module">
+  // Warm the detector once. If the wasm can't load (offline / blocked), drop the polyfill
+  // so html5-qrcode falls back to its built-in decoder instead of failing every scan.
+  window.addEventListener('load',async()=>{
+    try{
+      if(!('BarcodeDetector'in window))return;
+      const c=document.createElement('canvas');c.width=c.height=8;
+      await new BarcodeDetector().detect(c);
+    }catch(e){
+      try{delete window.BarcodeDetector}catch(_){window.BarcodeDetector=undefined}
+    }
+  });
+</script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>

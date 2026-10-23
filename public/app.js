@@ -27,7 +27,7 @@ async function createLogin(username, gen, pin){
 
 const S = { authUser:null, authChecked:false, owner:false, member:null, me:null,
   staff:[], items:[], products:{}, settings:null, sections:[], stores:[], storeId:null,
-  loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false,
+  loaded:{}, tab:'today', filter:{q:'',status:'active'}, scan:null, camOn:false, goto:null,
   editStaff:null, editItem:null, editLines:null, showOwner:false, ownerTaps:0, error:null, briefed:false,
   lines:[{expiry:''}], logStep:1, draft:{product:'',gtin:null,batch:'',notes:'',location:''}, offCache:{}, feedback:[], scores:[], nameImg:{}, sugTimer:null, photos:{}, photoReq:{}, photoTarget:null, deadImg:{} };
 
@@ -230,6 +230,7 @@ function render(){
   app.innerHTML={today:todayView,log:logView,all:allView,activity:activityView,staff:staffView}[S.tab]();
   restore(keep,focused);
   updateBadges();
+  if(S.goto){const gid=S.goto;S.goto=null;const el=document.getElementById('it-'+gid);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('flash-item');setTimeout(()=>{el.classList.remove('flash-item')},1800);}}
   if(!S.briefed){S.briefed=true;briefing()}
 }
 function restore(keep,focused){for(const id in keep){const el=document.getElementById(id);if(el)el.value=keep[id]}if(focused){const el=document.getElementById(focused);if(el)el.focus()}}
@@ -353,7 +354,7 @@ function onPhotoPicked(e){
 function itemCard(it){
   const n=daysLeft(it.expiry);const [y,m,d]=it.expiry.split('-');const live=it.status==='active'||it.status==='reduced';
   const b=live?band(n):'';const acts=true;
-  return `<div class="item">
+  return `<div class="item" id="it-${it.id}">
     <div class="datebox ${b==='ok'?'':b}"><div class="d">${+d}</div><div class="m">${MON[+m-1]} ${y.slice(2)}</div></div>
     <div class="name">${esc(it.product)}</div>
     <div class="meta">${it.location?`<span>${esc(it.location)}</span>`:''}
@@ -456,12 +457,15 @@ function scanBox(){
   return `<div class="scan">
     <div class="head"><h3>Scan barcode</h3><span class="note">Pack barcode or supplier case label</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <input id="scan_in" autocomplete="off" placeholder="Scanner input, or type a barcode" aria-label="Barcode" style="flex:1 1 220px">
-      <button type="button" class="btn primary" data-camera="1">${S.camOn?'Stop camera':'Scan with camera'}</button>
+      <input id="scan_in" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="go" autocomplete="off" placeholder="Type or scan a barcode" aria-label="Barcode" style="flex:1 1 150px">
+      <button type="button" class="btn primary" data-scango="1" style="flex:0 0 auto;min-width:64px">Go</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn" data-camera="1" style="flex:1 1 auto">${S.camOn?'Stop camera':'📷 Scan with camera'}</button>
       ${S.camOn?`<button type="button" class="btn" data-torch="1">${torchOn?'Torch off':'Torch'}</button>`:''}
     </div>
     <div id="camBox" ${S.camOn?'':'hidden'}></div>
-    ${S.camOn?`<div class="note">Hold the barcode about <b>20&nbsp;cm</b> away (a hand's length), not right up against the lens — phone cameras can't focus that close. Keep steady; tap Torch in low light.</div>`:''}
+    ${S.camOn?`<div class="note">Point at the barcode and hold steady — it reads at most distances now. Tap Torch in low light. If a phone still struggles, typing the number or a Bluetooth scanner always works.</div>`:''}
     ${sc?(sc.ok?`<div class="readout">
       ${sc.gtin?`<span><b>Product no.</b>${esc(sc.gtin)}</span>`:''}
       ${sc.expiry?`<span><b>${sc.expiryKind}</b>${esc(sc.expiry)}</span>`:''}${sc.produced?`<span><b>Packed</b>${esc(sc.produced)}</span>`:''}
@@ -471,11 +475,12 @@ function scanBox(){
       ${sc.weightLooksPrice?`<div class="warnbox">This looks like an in-store weighed label. Its number changes with weight and price, so it won't match the same product next time.</div>`:''}
       ${onShelf.length?`<div class="stockcard">
         <div class="stockcard-h"><span>Already in stock</span><span class="stockcard-n">${onShelf.length} date${onShelf.length===1?'':'s'}</span></div>
-        ${onShelf.map(i=>{const n=daysLeft(i.expiry);return `<div class="stockrow">
+        ${onShelf.map(i=>{const n=daysLeft(i.expiry);return `<button type="button" class="stockrow" data-gotoitem="${i.id}">
           <span class="stockdate">${esc(fmtExp(i.expiry))}</span>
           <span class="pill ${band(n)}">${dueLabel(n)}</span>
           ${i.location?`<span class="stockloc">${esc(i.location)}</span>`:''}
-        </div>`}).join('')}
+          <span class="chev" aria-hidden="true">&rsaquo;</span>
+        </button>`}).join('')}
         <div class="note">These are already on the shelf. Only add a date below for stock with a different use-by.</div>
       </div>`:''}`
       :`<div class="errbox">Couldn't read that barcode. Check it scanned fully, or type the name below.</div>`):''}
@@ -683,7 +688,7 @@ async function startCamera(){
   if(!window.Html5Qrcode){flash('Camera scanner didn\'t load. Check the connection.');return}
   S.camOn=true;torchOn=false;render();
   const onHit=text=>{stopCamera();if(navigator.vibrate)navigator.vibrate(60);applyScan(text)};
-  const cfg={fps:15,qrbox:(w,h)=>({width:Math.min(320,Math.round(w*0.9)),height:Math.min(210,Math.round(h*0.55))})};
+  const cfg={fps:10};  // no qrbox = decode the full frame, which is what lets it catch a barcode held further away
   // iOS Safari rejects some constraints (e.g. advanced focusMode) and leaves the
   // scanner unusable, so try progressively simpler options, each on a fresh instance.
   // Request a high-resolution stream: iPhone Safari won't let us control focus, so more
@@ -1049,6 +1054,8 @@ document.addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   const d=t.dataset;
   if(d.camera){cam?stopCamera():startCamera();return}
+  if(d.scango){const el=$('#scan_in');const v=el?el.value.trim():'';if(el)el.value='';if(v)applyScan(v);else el?.focus();return}
+  if(d.gotoitem){if(cam)stopCamera();S.goto=d.gotoitem;S.tab='all';S.filter.status='active';S.filter.q='';window.scrollTo(0,0);render();return}
   if(d.usesug){const pe=$('#lf_product');if(pe)pe.value=d.usesug;if(d.img)S.nameImg[normName(d.usesug)]=d.img;const el=$('#nameSug');if(el)el.innerHTML='';checkDup();pe?.focus();return}
   if(d.addphoto){pickPhoto(d.addphoto);return}
   if(d.signout||t.id==='signOutBtn'){if(cam)stopCamera();signOut(auth);return}
