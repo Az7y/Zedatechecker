@@ -99,6 +99,12 @@ td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
 .scan input{font:600 18px var(--mono);letter-spacing:.04em}
 .scan .head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
 .readout{display:flex;flex-wrap:wrap;gap:6px}
+.stockcard{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:12px;display:grid;gap:8px}
+.stockcard-h{display:flex;justify-content:space-between;align-items:center;font:700 13px var(--body);text-transform:uppercase;letter-spacing:.05em;color:var(--fg)}
+.stockcard-n{font:600 12px var(--body);color:var(--muted);text-transform:none;letter-spacing:0}
+.stockrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.stockdate{font-weight:600;font-variant-numeric:tabular-nums}
+.stockloc{color:var(--muted);font-size:13px;margin-left:auto}
 .readout span{font:500 12px var(--mono);background:var(--sunk);padding:3px 8px;border-radius:4px}
 .readout b{font-family:var(--body);font-weight:600;color:var(--muted);margin-right:4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -235,7 +241,7 @@ details.grp>.list{padding:10px 12px}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 20 Oct 2026 · <span data-egg="ver">v2.5.0</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
+<footer class="appfoot">Updated 23 Oct 2026 · <span data-egg="ver">v2.5.1</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
 <div class="flash" id="flash" hidden></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>

@@ -108,6 +108,7 @@ function band(n){return n<=2?'crit':n<=7?'warn':'ok'}
 function dueLabel(n){return n<0?`Expired ${-n} day${n===-1?'':'s'} ago`:n===0?'Expires today':n===1?'Expires tomorrow':`${n} days left`}
 const pad=n=>String(n).padStart(2,'0');
 function fmtTime(ms){const d=new Date(ms);return `${pad(d.getDate())} ${MON[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`}
+function fmtExp(exp){const [y,m,d]=exp.split('-').map(Number);return `${d} ${MON[m-1]} ${y}`}
 const clock=ms=>{const d=new Date(ms);return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const STATUS={active:'On shelf',reduced:'On shelf',removed:'Removed',sold:'Sold through',void:'Deleted'};
 const ACTION={logged:'logged',reduced:'reduced',removed:'removed from shelf',sold:'marked sold through',restored:'put back on shelf',void:'deleted (mistake)',edited:'edited the details',adjusted:'changed the count'};
@@ -444,7 +445,10 @@ function todayView(){
   </section>`;
 }
 function scanBox(){
-  const sc=S.scan;const onShelf=sc&&sc.gtin?liveItems().filter(i=>i.gtin===sc.gtin):[];
+  const sc=S.scan;
+  const knownName=(sc&&sc.gtin&&S.products[sc.gtin]&&S.products[sc.gtin].name)||(S.draft&&S.draft.product)||'';
+  const onShelf=sc?liveItems().filter(i=>(sc.gtin&&i.gtin===sc.gtin)||(knownName&&i.product&&i.product.toLowerCase()===knownName.toLowerCase())):[];
+  onShelf.sort((a,b)=>a.expiry.localeCompare(b.expiry));
   const unknown=sc&&sc.gtin&&!S.products[sc.gtin];
   const lookupNote=unknown?(sc.lookup==='busy'?'<div class="note">Looking up the name online…</div>'
     :sc.lookup==='done'?'<div class="note">Name suggested from Open Food Facts. Check it reads right.</div>'
@@ -465,7 +469,15 @@ function scanBox(){
       ${lookupNote}
       ${sc.gtin&&S.products[sc.gtin]?'<div class="note">Product name filled from an earlier log.</div>':''}
       ${sc.weightLooksPrice?`<div class="warnbox">This looks like an in-store weighed label. Its number changes with weight and price, so it won't match the same product next time.</div>`:''}
-      ${onShelf.length?`<div class="warnbox">Already on the list: ${onShelf.map(i=>`use-by ${esc(i.expiry)}`).join(', ')}</div>`:''}`
+      ${onShelf.length?`<div class="stockcard">
+        <div class="stockcard-h"><span>Already in stock</span><span class="stockcard-n">${onShelf.length} date${onShelf.length===1?'':'s'}</span></div>
+        ${onShelf.map(i=>{const n=daysLeft(i.expiry);return `<div class="stockrow">
+          <span class="stockdate">${esc(fmtExp(i.expiry))}</span>
+          <span class="pill ${band(n)}">${dueLabel(n)}</span>
+          ${i.location?`<span class="stockloc">${esc(i.location)}</span>`:''}
+        </div>`}).join('')}
+        <div class="note">These are already on the shelf. Only add a date below for stock with a different use-by.</div>
+      </div>`:''}`
       :`<div class="errbox">Couldn't read that barcode. Check it scanned fully, or type the name below.</div>`):''}
   </div>`;
 }
