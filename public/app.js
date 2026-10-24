@@ -893,10 +893,11 @@ function applyScan(raw){
   S.draft=S.draft||{product:'',gtin:null,batch:'',notes:'',location:''};
   S.draft.gtin=sc.gtin||null;S.draft.batch=sc.batch||'';
   const known=sc.gtin&&S.products[sc.gtin];
-  if(known){S.draft.product=known.name;sc.image=known.image||null;}
+  S.draft.product=known?known.name:'';S.draft.location='';S.draft.notes='';S.draft.addingSection=false;
+  if(known)sc.image=known.image||null;
   S.lines=[{expiry:sc.expiry||''}];
   render();
-  {const pe=$('#lf_product');if(pe&&S.draft.product)pe.value=S.draft.product;}
+  {const pe=$('#lf_product');if(pe)pe.value=S.draft.product||'';}
   if(!sc.ok){$('#scan_in')?.focus();return}
   if(sc.gtin&&!known&&(window.__offStub||navigator.onLine)){
     sc.lookup='busy';render();
