@@ -106,9 +106,13 @@ td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
 .stockrow:active{box-shadow:inset 0 0 0 2px var(--accent)}
 .stockdate{font-weight:600;font-variant-numeric:tabular-nums}
 .stockloc{color:var(--muted);font-size:13px;margin-left:auto}
-.stockrow .chev{color:var(--muted);font-size:20px;line-height:1}
+.stockrow .chev{color:var(--muted);font-size:13px;line-height:1}
 .stockrow .stockloc+.chev{margin-left:6px}
 .stockrow .stockdate+.pill+.chev{margin-left:auto}
+.stockrow[aria-expanded="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.stockitem{display:grid;gap:8px}
+.stockedit{display:grid;gap:10px;padding:0 2px 2px}
+.stockedit .edititem{margin-top:0}
 .flash-item{animation:flashItem 1.8s ease-out}
 @keyframes flashItem{0%,30%{box-shadow:0 0 0 2px var(--accent);background:var(--ok-bg)}100%{box-shadow:0 0 0 0 transparent}}
 .readout span{font:500 12px var(--mono);background:var(--sunk);padding:3px 8px;border-radius:4px}
@@ -247,7 +251,7 @@ details.grp>.list{padding:10px 12px}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 23 Oct 2026 · <span data-egg="ver">v2.6.2</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
+<footer class="appfoot">Updated 23 Oct 2026 · <span data-egg="ver">v2.6.3</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
 <div class="flash" id="flash" hidden></div>
 
 <!-- Give iPhones a WASM barcode detector (Safari ships none), so html5-qrcode uses it like Android's native one.

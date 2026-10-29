@@ -475,13 +475,24 @@ function scanBox(){
       ${sc.weightLooksPrice?`<div class="warnbox">This looks like an in-store weighed label. Its number changes with weight and price, so it won't match the same product next time.</div>`:''}
       ${onShelf.length?`<div class="stockcard">
         <div class="stockcard-h"><span>Already in stock</span><span class="stockcard-n">${onShelf.length} date${onShelf.length===1?'':'s'}</span></div>
-        ${onShelf.map(i=>{const n=daysLeft(i.expiry);return `<button type="button" class="stockrow" data-gotoitem="${i.id}">
-          <span class="stockdate">${esc(fmtExp(i.expiry))}</span>
-          <span class="pill ${band(n)}">${dueLabel(n)}</span>
-          ${i.location?`<span class="stockloc">${esc(i.location)}</span>`:''}
-          <span class="chev" aria-hidden="true">&rsaquo;</span>
-        </button>`}).join('')}
-        <div class="note">These are already on the shelf. Only add a date below for stock with a different use-by.</div>
+        ${onShelf.map(i=>{const n=daysLeft(i.expiry);const open=S.editItem===i.id;return `<div class="stockitem">
+          <button type="button" class="stockrow" data-edititem="${i.id}" aria-expanded="${open}">
+            <span class="stockdate">${esc(fmtExp(i.expiry))}</span>
+            <span class="pill ${band(n)}">${dueLabel(n)}</span>
+            ${i.location?`<span class="stockloc">${esc(i.location)}</span>`:''}
+            <span class="chev" aria-hidden="true">${open?'&#9662;':'&#9656;'}</span>
+          </button>
+          ${open?`<div class="stockedit">
+            ${isAdmin()?editItemForm(i):''}
+            <div class="actions">
+              <button type="button" class="btn small danger" data-act="removed" data-id="${i.id}">Remove from shelf</button>
+              <button type="button" class="btn small" data-act="sold" data-id="${i.id}">Sold through</button>
+              <button type="button" class="btn small ghost" data-act="void" data-id="${i.id}">Delete entry</button>
+              ${isAdmin()?'':'<button type="button" class="btn small ghost" data-editcancel="1">Close</button>'}
+            </div>
+          </div>`:''}
+        </div>`}).join('')}
+        <div class="note">Tap a date to edit it, add more dates for this product, or take it off the shelf.</div>
       </div>`:''}`
       :`<div class="errbox">Couldn't read that barcode. Check it scanned fully, or type the name below.</div>`):''}
   </div>`;
