@@ -111,9 +111,12 @@ td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
 .stockrow .stockdate+.pill+.chev{margin-left:auto}
 .stockrow[aria-expanded="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .stockitem{display:grid;gap:8px}
-.stockedit{display:grid;gap:10px;padding:2px 10px 10px;background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;margin-top:-10px}
-.stockedit .sd-lab{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--muted)}
-.stockedit .srow-act{border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+.stockedit{display:grid;gap:8px;padding:4px 10px 10px;background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;margin-top:-10px}
+.stockedit input{font:600 15px var(--body);letter-spacing:0;padding:9px 11px}
+.stockedit .sd-lab{display:grid;gap:4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.stockedit .actions{gap:8px;padding-top:2px}
+.stockedit .srow-act{border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+.stockedit .btn.small{font-size:12px;padding:6px 10px}
 .linklike{background:none;border:0;padding:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
 .readout span{font:500 12px var(--mono);background:var(--sunk);padding:3px 8px;border-radius:4px}
 .readout b{font-family:var(--body);font-weight:600;color:var(--muted);margin-right:4px}
@@ -251,7 +254,7 @@ details.grp>.list{padding:10px 12px}
     <div class="empty">Starting up…</div>
   </section>
 </main>
-<footer class="appfoot">Updated 23 Oct 2026 · <span data-egg="ver">v2.6.4</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
+<footer class="appfoot">Updated 23 Oct 2026 · <span data-egg="ver">v2.6.5</span> · Created by <span data-egg="oz7y">Oz7y</span> · idea by <span data-egg="sameer">Sameer</span></footer>
 <div class="flash" id="flash" hidden></div>
 
 <!-- Give iPhones a WASM barcode detector (Safari ships none), so html5-qrcode uses it like Android's native one.
